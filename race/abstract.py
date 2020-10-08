@@ -1,4 +1,5 @@
 import functools
+import inspect
 import math
 from collections import deque
 from typing import (
@@ -21,7 +22,7 @@ class Racer:
 
         while True:
             try:
-                next(gen_obj)
+                yield next(gen_obj)
             except StopIteration as exc:
                 return exc.value
 
@@ -34,33 +35,37 @@ def racer(fun) -> Racer:
 class RaceInstance:
     races: List[RaceGenerator]
 
-    def __enter__(self) -> List[RaceGenerator]:
-        return self.races
+    def __post_init__(self):
+        for x in self.races:
+            if not inspect.isgenerator(x):
+                raise AssertionError(repr(x))
+
+    def __enter__(self) -> 'RaceInstance':
+        return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         pass
 
 
 class Instantiator:
-    def _instantiate(self, races: 'Race') -> List[RaceGenerator]:
-        return [x.fun() for x in races.items]
+    count: int
 
-    def instantiate(self, races: 'Race') -> RaceInstance:
-        return RaceInstance(self._instantiate(races))
-
-# todo we also need a ContextSwitcher!
+    def instantiate(self) -> RaceInstance:
+        raise NotImplementedError
 
 
 @dataclass
 class CallbackInstantiator(Instantiator):
-    fun: Optional[Callable[[], List[Tuple[Union[Tuple[Any, ...], List[Any]], Dict[str, Any]]]]] = None
+    count: int
+    callback: Callable[[], List[Callable[[], RaceGenerator]]]
 
-    def _instantiate(self, races: 'Race') -> List[RaceGenerator]:
-        if self.fun is None:
-            args = [([], {}) for _ in range(len(races.items))]
-        else:
-            args = self.fun()
-        return [x.fun(*args, **kwargs) for x, (args, kwargs) in zip(races.items, args)]
+    def instantiate(self) -> RaceInstance:
+        callbacks = self.callback()
+
+        if not len(callbacks) == self.count:
+            raise AssertionError
+
+        return RaceInstance([x() for x in callbacks])
 
 
 @dataclass(frozen=True)
@@ -160,14 +165,10 @@ class ExecuteResult:
 
 @dataclass
 class Race:
-    items: List[Racer]
     instantiator: Instantiator = Instantiator()
 
     def __len__(self):
-        return len(self.items)
-
-    def instantiate(self) -> RaceInstance:
-        return self.instantiator.instantiate(self)
+        return self.instantiator.count
 
     @classmethod
     def execute_cls(cls, path: Path, instantiated: List[RaceGenerator]) -> Tuple[Labels, List[Any]]:
@@ -185,7 +186,7 @@ class Race:
                     labels=labels,
                 )
             try:
-                next_label = Label.from_yield(next(current))
+                next_label_value = next(current)
             except StopIteration as exc:
                 rtn[p] = exc.value
                 running[p] = None
@@ -195,6 +196,8 @@ class Race:
                     labels=labels,
                     exception=exc,
                 ) from None
+            else:
+                next_label = Label.from_yield(next_label_value)
 
             labels += [next_label]
 
@@ -212,9 +215,9 @@ class Race:
             if t < 0 or len(self) <= t:
                 raise ValueError
 
-        with self.instantiate() as instantiated:
+        with self.instantiator.instantiate() as instantiated:
             try:
-                labels, rtn = self.execute_cls(path, instantiated)
+                labels, rtn = self.execute_cls(path, instantiated.races)
             except ExecuteError as exc:
                 return ExecuteResult(
                     result=exc,

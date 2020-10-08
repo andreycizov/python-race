@@ -1,3 +1,4 @@
+import functools
 import unittest
 from collections import defaultdict
 from typing import Dict, Optional
@@ -81,11 +82,16 @@ class TestExecutions(unittest.TestCase):
         def instantiate():
             globs = Globals()
 
-            return [((globs, 'a'), {}) for _ in range(len(racers))]
+            return [
+                functools.partial(
+                    increase,
+                    vars=globs,
+                    name='a',
+                )
+                for i in range(2)
+            ]
 
-        racers = [increase, increase]
-
-        visitor = Visitor.from_race(Race(racers, CallbackInstantiator(instantiate)))
+        visitor = Visitor.from_race(Race(CallbackInstantiator(2, instantiate)))
 
         scenarios = 0
         incomplete_scenarios = 0
@@ -159,11 +165,18 @@ class TestExecutions(unittest.TestCase):
             locks = CAS()
             globs = Globals()
 
-            return [((globs, locks, 'a', i), {}) for i in range(len(racers))]
+            return [
+                functools.partial(
+                    cas,
+                    globs=globs,
+                    locks=locks,
+                    lock_id='a',
+                    locking_id=i,
+                )
+                for i in range(2)
+            ]
 
-        racers = [cas, cas]
-
-        visitor = Visitor.from_race(Race(racers, CallbackInstantiator(instantiate)))
+        visitor = Visitor.from_race(Race(CallbackInstantiator(2, instantiate)))
 
         finishes = []
         incorrect = []
@@ -218,11 +231,17 @@ class TestExecutions(unittest.TestCase):
         def instantiate():
             locks = Locks()
 
-            return [((locks, 'a', i), {}) for i in range(len(racers))]
+            return [
+                functools.partial(
+                    cas,
+                    locks=locks,
+                    lock_id='a',
+                    locking_id=i,
+                )
+                for i in range(2)
+            ]
 
-        racers = [cas, cas]
-
-        visitor = Visitor.from_race(Race([cas, cas], CallbackInstantiator(instantiate)))
+        visitor = Visitor.from_race(Race(CallbackInstantiator(2, instantiate)))
 
         deadlocks = []
         non_deadlocks = []
