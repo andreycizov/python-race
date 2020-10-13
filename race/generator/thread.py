@@ -46,7 +46,7 @@ class Exit(Packet):
     pass
 
 
-class Terminate(Packet, Exception):
+class Terminate(Packet, BaseException):
     pass
 
 
@@ -98,7 +98,6 @@ class AnyCallable:
     def __call__(self, *args, **kwargs) -> Any:
         raise NotImplementedError
 
-
 @dataclass
 class ThreadGenerator:
     fun: AnyCallable
@@ -127,17 +126,54 @@ class ThreadGenerator:
         self.thread = threading.Thread(
             target=_main_thread,
             args=(replace(self),),
+            daemon=True,
         )
         self.thread.start()
+
+    @classmethod
+    def thread_raise(cls, thread_obj, exception):
+        import ctypes
+
+        found = False
+        target_tid = None
+
+        for tid, tobj in threading._active.items():
+            if tobj is thread_obj:
+                found = True
+                target_tid = tid
+                break
+
+        if not found:
+            # note(sleep) thread may be dead by now due to terminate
+            return
+            # raise ValueError("Invalid thread object")
+
+        ret = ctypes.pythonapi.PyThreadState_SetAsyncExc(target_tid, ctypes.py_object(exception))
+        # ref: http://docs.python.org/c-api/init.html#PyThreadState_SetAsyncExc
+
+        # THIS DOES NOT KILL THEADS WHICH ARE SLEEPING!!!!
+        # note(sleep)
+        if ret == 0:
+            return
+            # raise ValueError("Invalid thread ID")
+        elif ret > 1:
+            # Huh? Why would we notify more than one threads?
+            # Because we punch a hole into C level interpreter.
+            # So it is better to clean up the mess.
+            ctypes.pythonapi.PyThreadState_SetAsyncExc(target_tid, 0)
+            raise SystemError("PyThreadState_SetAsyncExc failed")
 
     def thread_destruct(self) -> None:
         if self.thread is None:
             raise AssertionError
         self.queue_out.put(Terminate())
-        self.thread.join()
+        self.thread_raise(self.thread, Terminate())
+        # note(sleep) can not join on sleeping threads unfortunately
+        # self.thread.join()
 
         self.queue_in = None
         self.queue_out = None
+
         self.thread = None
 
     def thread_yield(self, value: Any) -> Any:
