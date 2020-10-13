@@ -1,8 +1,9 @@
 import time
 import unittest
+from contextlib import contextmanager
 
 from race.abstract import Label
-from race.remote_generator import RemoteGenerator, ReentryError
+from race.generator.remote import RemoteGenerator, ReentryError, RemoteTimeoutError
 
 TEN = 10
 
@@ -30,10 +31,13 @@ def _generator_fun_deadlock():
 
 
 class TestRemoteGenerator(unittest.TestCase):
-    def test_once(self):
-        with RemoteGenerator.from_fun(_generator_fun) as main:
-            client = main.client()
+    @contextmanager
+    def _generator(self, fun):
+        with RemoteGenerator(fun) as main:
+            yield main.client()
 
+    def test_once(self):
+        with self._generator(_generator_fun) as client:
             labels = [x for x in client()]
 
         self.assertEqual(
@@ -42,9 +46,7 @@ class TestRemoteGenerator(unittest.TestCase):
         )
 
     def test_twice(self):
-        with RemoteGenerator.from_fun(_generator_fun) as main:
-            client = main.client()
-
+        with self._generator(_generator_fun) as client:
             labels_1 = [x for x in client()]
             labels_2 = [x for x in client()]
 
@@ -59,9 +61,7 @@ class TestRemoteGenerator(unittest.TestCase):
         )
 
     def test_half_then_one(self):
-        with RemoteGenerator.from_fun(_generator_fun) as main:
-            client = main.client()
-
+        with self._generator(_generator_fun) as client:
             labels_1 = []
             #
             for i, x in enumerate(client()):
@@ -83,18 +83,14 @@ class TestRemoteGenerator(unittest.TestCase):
         )
 
     def test_non_reentrant(self):
-        with RemoteGenerator.from_fun(_generator_fun) as main:
-            client = main.client()
-
+        with self._generator(_generator_fun) as client:
             for _ in client():
                 with self.assertRaises(ReentryError):
                     for _ in client():
                         pass
 
     def test_exception(self):
-        with RemoteGenerator.from_fun(_generator_fun_exc) as main:
-            client = main.client()
-
+        with self._generator(_generator_fun_exc) as client:
             i = -1
             with self.assertRaises(_CustomError):
                 # maybe transfer the traceback as well
@@ -109,11 +105,9 @@ class TestRemoteGenerator(unittest.TestCase):
             )
 
     def test_deadlock(self):
-        with RemoteGenerator.from_fun(_generator_fun_deadlock) as main:
-            client = main.client()
-
+        with self._generator(_generator_fun_deadlock) as client:
             i = -1
-            with self.assertRaises(TimeoutError):
+            with self.assertRaises(RemoteTimeoutError):
                 # maybe transfer the traceback as well
                 for i, lbl in enumerate(client()):
                     self.assertEqual(
