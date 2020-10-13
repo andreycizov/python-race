@@ -92,16 +92,6 @@ class RemoteGenerator:
     join_timeout: float = 10.
     read_timeout: Optional[float] = 1.
 
-    @classmethod
-    def from_fun(cls, fun: Fun) -> 'RemoteGenerator':
-        rtn = RemoteGenerator(
-            fun=fun,
-        )
-
-        rtn._process_ensure_running()
-
-        return rtn
-
     def _process_ensure_running(self):
         if self.process is None:
             self._process_start()
@@ -137,10 +127,14 @@ class RemoteGenerator:
         self.process = None
 
     def __enter__(self) -> 'RemoteGenerator':
+        self.open()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
+
+    def open(self):
+        self._process_ensure_running()
 
     def close(self):
         self._process_ensure_stopped()
@@ -200,6 +194,10 @@ class ReentryError(Exception):
     pass
 
 
+class RemoteTimeoutError(Exception):
+    pass
+
+
 @dataclass
 class RemoteGeneratorClient:
     instance: RemoteGenerator
@@ -232,7 +230,7 @@ class RemoteGeneratorClient:
                     next_item = self.instance.out_queue.get(timeout=self.instance.read_timeout)
                 except Empty:
                     self.instance._process_ensure_stopped()
-                    raise TimeoutError
+                    raise RemoteTimeoutError
 
                 try:
                     self._dispatch(next_item)
