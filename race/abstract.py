@@ -131,9 +131,29 @@ PathItem = int
 @dataclass()
 class Path:
     items: List[PathItem] = field(default_factory=list)
+    _hash: Optional[int] = None
+
+    def __post_init__(self):
+        if not self._hash is None:
+            raise AssertionError
+
+        self._hash = self.init_hash(self)
+
+    @classmethod
+    def init_hash(cls, self: 'Path') -> int:
+        hash_a = hash(sum(x + 234234234 for x in self.items))
+        hash_b = 94859430554
+
+        for i, x in enumerate(self.items):
+            hash_b ^= hash(i + 2343243) ^ hash(x + 54364757)
+
+        hash_c = hash(len(self.items))
+        rtn = hash_a ^ hash_b ^ hash_c
+
+        return rtn
 
     def __hash__(self):
-        return functools.reduce(lambda a, b: a ^ hash(b), enumerate(self.items), 0)
+        return self._hash
 
     def __iter__(self) -> Iterator[PathItem]:
         return iter(self.items)
@@ -143,6 +163,9 @@ class Path:
             raise TypeError
 
         return Path(self.items + other.items)
+
+    def append(self, item: PathItem) -> 'Path':
+        return Path(self.items + [item])
 
 
 Labels = List[Label]
@@ -274,6 +297,7 @@ class Visitor:
     races: Race
     visited: Dict[Path, bool] = field(default_factory=dict)
     queue: Deque[Path] = field(default_factory=deque)
+    depth_first: bool = True
 
     def __post_init__(self):
         self._push_paths(Path())
@@ -286,12 +310,16 @@ class Visitor:
 
     def _push_paths(self, path: Path):
         for x in range(len(self.races)):
-            subpath = path + Path([x])
+            subpath = path.append(x)
 
             if subpath in self.visited:
                 continue
 
-            self.queue.appendleft(subpath)
+            if self.depth_first:
+                self.queue.appendleft(subpath)
+            else:
+                self.queue.append(subpath)
+
             self.visited[subpath] = True
 
     def __iter__(self):
@@ -330,4 +358,4 @@ def n_combi_bi(a: int, b: int) -> int:
 
 
 def n_combi(*ns: int) -> int:
-    return functools.reduce(n_combi_bi, ns, 0)
+    return functools.reduce(n_combi_bi, ns)

@@ -13,13 +13,10 @@ _LOG = logging.getLogger(__name__)
 
 
 def tracer(frame, event, arg=None):
-    try:
         if event == 'call':
             return tracer
         elif event == 'line':
             frame_info = inspect.getframeinfo(frame)
-
-            sys.exc_info()
 
             thread_yield((frame_info.filename, frame_info.lineno))
             return tracer
@@ -29,10 +26,6 @@ def tracer(frame, event, arg=None):
             return tracer
         else:
             raise NotImplementedError(repr(event))
-    except:
-        _LOG.getChild(tracer.__name__).exception('exception raised in tracer')
-        exit()
-        raise
 
 
 @contextmanager
@@ -48,8 +41,25 @@ def trace():
 class Trace:
     fun: AnyCallable
 
+    def tracer(self, frame, event, arg=None):
+        if event == 'call':
+            if frame.f_code.co_name != self.fun.__name__:
+                return None
+            return tracer
+        elif event == 'line':
+            frame_info = inspect.getframeinfo(frame)
+
+            thread_yield((frame_info.filename, frame_info.lineno))
+            return tracer
+        elif event == 'return':
+            return
+        elif event == 'exception':
+            return tracer
+        else:
+            raise NotImplementedError(repr(event))
+
     def __call__(self, *args, **kwargs):
-        sys.settrace(tracer)
+        sys.settrace(self.tracer)
         try:
             return self.fun(*args, **kwargs)
         finally:
