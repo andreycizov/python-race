@@ -26,6 +26,10 @@ def _generator_fun_exc():
     raise _CustomError
 
 
+def _generator_fun_exc_immediate():
+    raise _CustomError
+
+
 def _generator_fun_deadlock():
     for i in range(TEN):
         thread_yield(Label.from_yield(i))
@@ -35,6 +39,7 @@ def _generator_fun_deadlock():
 _MAP = {
     test_remote._generator_fun: _generator_fun,
     test_remote._generator_fun_exc: _generator_fun_exc,
+    test_remote._generator_fun_exc_immediate: _generator_fun_exc_immediate,
     test_remote._generator_fun_deadlock: _generator_fun_deadlock,
 }
 

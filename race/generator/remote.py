@@ -33,8 +33,13 @@ class ParentEvent:
     pass
 
 
-class Stop(ParentEvent):
+class ResetOk(ParentEvent):
     pass
+
+
+@dataclass
+class Stop(ParentEvent):
+    value: Any
 
 
 @dataclass
@@ -57,8 +62,9 @@ class _Raise(Exception):
     exception: Exception
 
 
+@dataclass
 class _Return(Exception):
-    pass
+    value: Any
 
 
 class _Exit(Exception):
@@ -163,15 +169,20 @@ class RemoteGenerator:
 
         try:
             next_item = Label.from_yield(next(self.iter_obj))
-        except StopIteration:
-            self.out_queue.put(Stop())
+        except StopIteration as exc:
+            self.out_queue.put(Stop(exc.value))
         except Exception as exc:
             self.out_queue.put(Except(exc))
         else:
             self.out_queue.put(Next(next_item))
 
     def _dispatch_reset(self, msg: Reset):
-        self.iter_obj = self.fun(*msg.args, **msg.kwargs)
+        try:
+            self.iter_obj = self.fun(*msg.args, **msg.kwargs)
+        except Exception as exc:
+            self.out_queue.put(Except(exc))
+        else:
+            self.out_queue.put(ResetOk())
 
     def _dispatch_terminate(self, msg: Terminate):
         raise _Exit()
@@ -184,8 +195,9 @@ class RemoteGenerator:
                 self._dispatch(next_msg)
         except _Exit:
             pass
-        except:
+        except BaseException as exc:
             _LOG.exception('main_child')
+            self.out_queue.put(Except(exc))
         finally:
             _LOG.info('terminating')
 
@@ -205,7 +217,7 @@ class RemoteGeneratorClient:
 
     def _dispatch(self, next_item: Any):
         if isinstance(next_item, Stop):
-            raise _Return()
+            raise _Return(next_item.value)
         elif isinstance(next_item, Next):
             raise _Yield(next_item.label)
         elif isinstance(next_item, Except):
@@ -222,7 +234,19 @@ class RemoteGeneratorClient:
         self.instance._process_ensure_running()
 
         self.instance.in_queue.put(Reset(args=args, kwargs=kwargs))
-        self.instance.in_queue.put(Push())
+
+        try:
+            next_item = self.instance.out_queue.get(timeout=self.instance.read_timeout)
+        except Empty:
+            self.instance._process_ensure_stopped()
+            raise RemoteTimeoutError
+
+        if isinstance(next_item, Except):
+            raise next_item.exception
+        elif isinstance(next_item, ResetOk):
+            self.instance.in_queue.put(Push())
+        else:
+            raise AssertionError(repr(next_item))
 
         try:
             while True:
@@ -234,8 +258,8 @@ class RemoteGeneratorClient:
 
                 try:
                     self._dispatch(next_item)
-                except _Return as _:
-                    return
+                except _Return as rtn:
+                    return rtn.value
                 except _Raise as exc:
                     raise exc.exception from None
                 except _Yield as exc:

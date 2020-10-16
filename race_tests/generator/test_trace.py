@@ -1,3 +1,5 @@
+import itertools
+import os
 import unittest
 
 from race.generator.thread import ThreadGenerator
@@ -23,9 +25,34 @@ class TestTraceGenerator(unittest.TestCase):
         with ThreadGenerator(Trace(_fun)) as main:
             filenames = list(main())
 
+            filenames = [(os.path.split(x)[-1], y) for x, y in filenames]
+            filenames = sorted(filenames)
+            filenames = itertools.groupby(filenames, key=lambda x: x)
+            filenames = {k: len(list(vs)) for k, vs in filenames}
+
+            (filename_a, lineno_a), (filename_b, lineno_b) = filenames.keys()
+
             self.assertEqual(
-                21,
-                len(filenames),
+                filename_a,
+                filename_b,
+            )
+
+            self.assertEqual(
+                lineno_a,
+                lineno_b - 1,
+            )
+
+            self.assertEqual(
+                {
+                    # first line is a comparison, it is executed
+                    # one more time that the count of a loop because
+                    # we need to also execute it for StopIteration
+                    (filename_a, lineno_a): TEN + 1,
+                    # the inner body is executed the exact amount of times
+                    # as requested by the counter
+                    (filename_b, lineno_b): TEN,
+                },
+                filenames,
             )
 
     def test_exc(self):

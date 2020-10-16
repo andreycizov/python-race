@@ -24,6 +24,11 @@ def _generator_fun_exc():
     raise _CustomError
 
 
+def _generator_fun_exc_immediate():
+    raise _CustomError
+    yield
+
+
 def _generator_fun_deadlock():
     for i in range(TEN):
         yield Label.from_yield(i)
@@ -101,6 +106,21 @@ class TestRemoteGenerator(unittest.TestCase):
                     )
             self.assertEqual(
                 TEN - 1,
+                i,
+            )
+
+    def test_exception_immediate(self):
+        with self._generator(_generator_fun_exc_immediate) as client:
+            i = -1
+            with self.assertRaises(_CustomError):
+                # maybe transfer the traceback as well
+                for i, lbl in enumerate(client()):
+                    self.assertEqual(
+                        Label.from_yield(i),
+                        lbl
+                    )
+            self.assertEqual(
+                -1,
                 i,
             )
 

@@ -142,7 +142,8 @@ class TestExecutions(unittest.TestCase):
             # this technically may expand into executions of a single thread for forever (before the second one)
             # thus should imply infinite cycles in the analyser
             while not locks.cas(lock_id, None, locking_id):
-                yield 'b'
+                yield 'b1'
+                yield 'b2'
 
             yield 'c'
 
@@ -197,6 +198,12 @@ class TestExecutions(unittest.TestCase):
 
             if max(res) != 2:
                 incorrect.append(res)
+
+        with self.subTest('visited'):
+            self.assertEqual(
+                2854,
+                len(visitor.visited),
+            )
 
         self.assertEqual(
             374,
