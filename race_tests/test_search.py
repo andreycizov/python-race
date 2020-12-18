@@ -201,7 +201,7 @@ class TestExecutions(unittest.TestCase):
 
         with self.subTest('visited'):
             self.assertEqual(
-                2854,
+                48098,
                 len(visitor.visited),
             )
 

@@ -1,7 +1,6 @@
 import logging
 import multiprocessing
 from queue import Empty
-from subprocess import TimeoutExpired
 from typing import Optional, Any, Iterable, Dict, Tuple
 
 from dataclasses import dataclass

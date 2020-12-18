@@ -1,3 +1,4 @@
+import inspect
 import logging
 import multiprocessing
 import threading
@@ -211,6 +212,9 @@ class ThreadGenerator:
 
                 try:
                     rtn = self.fun(*packet.args, **packet.kwargs)
+
+                    if inspect.isgenerator(rtn):
+                        raise ValueError('the value returned can not be a generator')
 
                     self.queue_in.put(Return(rtn))
                 except Terminate:
