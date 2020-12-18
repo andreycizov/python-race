@@ -143,7 +143,6 @@ class TestExecutions(unittest.TestCase):
             # thus should imply infinite cycles in the analyser
             while not locks.cas(lock_id, None, locking_id):
                 yield 'b1'
-                yield 'b2'
 
             yield 'c'
 
@@ -201,7 +200,7 @@ class TestExecutions(unittest.TestCase):
 
         with self.subTest('visited'):
             self.assertEqual(
-                48098,
+                2854,
                 len(visitor.visited),
             )
 
