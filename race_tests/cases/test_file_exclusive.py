@@ -1,26 +1,20 @@
-import functools
 import os
 import tempfile
-import time
 import unittest
 from collections import defaultdict
 from typing import Optional, List
 
 from dataclasses import dataclass, field
 
-from race.abstract import Instantiator, RaceInstance, Visitor, Race, IncompleteExecuteError, n_combi, n_combi_bi
-from race.generator.remote import RemoteGenerator, RemoteTimeoutError
+from race.abstract import Instantiator, RaceInstance, Visitor, Race, IncompleteExecuteError
+from race.generator.remote import RemoteGenerator
 from race.generator.thread import AnyCallable, ThreadGenerator
 from race.generator.trace import Trace
 
 
 def write(filename, index):
-    while True:
-        try:
-            with open(filename, 'x') as file_obj:
-                file_obj.write(str(index))
-        except FileExistsError:
-            time.sleep(1)
+    with open(filename, 'a') as file_obj:
+        file_obj.write(str(index))
 
 
 def fun(filename: str, index: int) -> str:
@@ -95,7 +89,7 @@ class TestFileExclusive(unittest.TestCase):
 
             scenarios = 0
             incomplete_scenarios = 0
-            violations = []
+            paths = []
 
             label_vals = set()
 
@@ -119,43 +113,43 @@ class TestFileExclusive(unittest.TestCase):
                     # print(len(label_vals), n_combi(len(label_vals), len(label_vals)))
                     pass
                 try:
-                    for x in x.collect():
-                        returns[x] += 1
+                    for y in x.collect():
+                        returns[y] += 1
 
                     for y in x.labels:
                         label_vals.add(y.payload)
-                except RemoteTimeoutError:
-                    violations += [x]
+
+                    paths += [x]
                 except IncompleteExecuteError:
                     incomplete_scenarios += 1
                     continue
 
             with self.subTest('scenarios'):
                 self.assertEqual(
-                    10,
+                    362,
                     scenarios,
-                )
-
-            with self.subTest('violations'):
-                self.assertEqual(
-                    6,
-                    len(violations),
-                )
-
-            with self.subTest('incomplete_scenarios'):
-                self.assertEqual(
-                    4,
-                    incomplete_scenarios,
                 )
 
             with self.subTest('paths'):
                 self.assertEqual(
-                    [[1, 1], [0, 0], [1, 0, 0], [1, 0, 1], [0, 1, 0], [0, 1, 1]],
-                    [list(x.path) for x in violations],
+                    70,
+                    len(paths),
                 )
 
-            with self.subTest('returns'):
+            with self.subTest('incomplete_scenarios'):
                 self.assertEqual(
-                    {},
-                    dict(returns)
+                    292,
+                    incomplete_scenarios,
                 )
+
+            # with self.subTest('paths'):
+            #     self.assertEqual(
+            #         [[1, 1], [0, 0], [1, 0, 0], [1, 0, 1], [0, 1, 0], [0, 1, 1]],
+            #         [list(x.path) for x in paths],
+            #     )
+
+            # with self.subTest('returns'):
+            #     self.assertEqual(
+            #         {},
+            #         dict(returns)
+            #     )
