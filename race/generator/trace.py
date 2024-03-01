@@ -4,6 +4,7 @@ import inspect
 import logging
 import sys
 from contextlib import contextmanager
+from typing import Any
 
 from dataclasses import dataclass
 
@@ -58,7 +59,7 @@ class Trace:
         else:
             raise NotImplementedError(repr(event))
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args, **kwargs) -> Any:
         sys.settrace(self.tracer)
         try:
             return self.fun(*args, **kwargs)

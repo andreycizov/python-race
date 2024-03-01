@@ -1,11 +1,12 @@
 import logging
 import multiprocessing
 from queue import Empty
-from typing import Optional, Any, Iterable, Dict, Tuple
+from typing import Optional, Any, Iterable, Dict, Tuple, Callable
 
 from dataclasses import dataclass
 
 from race.abstract import Label
+from race2.abstract import ProcessGenerator, StateID
 
 _LOG = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ class Stop(ParentEvent):
 
 @dataclass
 class Next(ParentEvent):
-    label: Label
+    label: StateID
 
 
 @dataclass
@@ -53,7 +54,7 @@ class Except(ParentEvent):
 
 @dataclass
 class _Yield(Exception):
-    value: Label
+    value: StateID
 
 
 @dataclass
@@ -70,12 +71,6 @@ class _Exit(Exception):
     pass
 
 
-FunReturn = Iterable[Label]
-
-
-class Fun:
-    def __call__(self, *args, **kwargs) -> FunReturn:
-        raise NotImplementedError
 
 
 def _main_subprocess(remote_generator: 'RemoteGenerator'):
@@ -89,12 +84,12 @@ def _main_subprocess(remote_generator: 'RemoteGenerator'):
 class RemoteGenerator:
     # todo  ensure that we do not need to restart the remote process every time we would like to do
     #       a clean up. requires a synchronous interface for remove Termination
-    fun: Fun
+    fun: Callable
     in_queue: Optional[multiprocessing.Queue] = None
     out_queue: Optional[multiprocessing.Queue] = None
     process: Optional[multiprocessing.Process] = None
 
-    iter_obj: Optional[Iterable[Label]] = None
+    iter_obj: Optional[Iterable[StateID]] = None
 
     join_timeout: float = 10.
     read_timeout: Optional[float] = 1.
@@ -169,7 +164,7 @@ class RemoteGenerator:
             raise AssertionError
 
         try:
-            next_item = Label.from_yield(next(self.iter_obj))
+            next_item = next(self.iter_obj)
         except StopIteration as exc:
             self.out_queue.put(Stop(exc.value))
         except Exception as exc:
@@ -226,7 +221,7 @@ class RemoteGeneratorClient:
         else:
             raise AssertionError
 
-    def __call__(self, *args, **kwargs) -> FunReturn:
+    def __call__(self, *args, **kwargs) -> ProcessGenerator:
         if self.semaphore != 0:
             raise ReentryError(repr(self.semaphore))
 

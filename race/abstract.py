@@ -195,6 +195,8 @@ class Race:
 
     @classmethod
     def execute_cls(cls, path: Path, instantiated: List[RaceGenerator]) -> Tuple[Labels, List[Any]]:
+        # todo make this function "generator-like" - i.e. allow to execute while providing path piecewise
+        #      (i.e. PathItem)
         running = list(instantiated)
         rtn = [None for _ in running]
         # we can't throw from here anymore if we also need to return the labels
@@ -202,6 +204,7 @@ class Race:
 
         for p in path:
             # todo context switching
+            # todo do not raise, always return - helps with thinking about the data model
             current = running[p]
 
             if current is None:
@@ -332,6 +335,11 @@ class Visitor:
             res = self.races.execute(next_path)
 
             if isinstance(res.result, ExecuteError):
+                # todo we should be able to optimise this path by always trying to finish the available path,
+                #      i.e. if it's not finished we continue with DPS/BFS until we reach the end of the path,
+                #      (prioritising appropriately) until we have reached a terminal state
+                #      from the tests in the test suite we see about 80% of incomplete scenarios for even the most
+                #      simple issues
                 if isinstance(res.result, NotExited):
                     # NotExited means that `len(next_path) == len(res.labels)`
                     self._push_paths(norm_path(next_path, res.labels))

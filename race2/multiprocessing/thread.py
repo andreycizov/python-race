@@ -2,11 +2,12 @@ import inspect
 import logging
 import multiprocessing
 import threading
-from typing import Optional, Any, Dict, Tuple
+from typing import Optional, Any, Dict, Tuple, Callable
 
 from dataclasses import dataclass, replace
 
-from race.generator.remote import ReentryError
+from race2.multiprocessing.remote import ReentryError
+from race2.multiprocessing.yield_fun import yield_fun_set, yield_fun_clean
 
 _LOG = logging.getLogger(__name__)
 
@@ -59,50 +60,9 @@ class _AssertionError(BaseException):
     pass
 
 
-_LOCAL = threading.local()
-_LOCAL.generator: Optional['ThreadGenerator'] = None
-
-
-def thread_ensure_local():
-    if getattr(_LOCAL, 'generator', None) is None:
-        _LOCAL.generator = None
-
-
-def thread_store(thread_gen: 'ThreadGenerator') -> None:
-    thread_ensure_local()
-
-    if _LOCAL.generator is not None:
-        raise _AssertionError
-
-    _LOCAL.generator = thread_gen
-
-
-def thread_clean() -> None:
-    thread_ensure_local()
-
-    if _LOCAL.generator is None:
-        raise _AssertionError
-
-    _LOCAL.generator = None
-
-
-def thread_yield(value: Any = None) -> Any:
-    thread_ensure_local()
-
-    if _LOCAL.generator is None:
-        raise _AssertionError
-
-    return _LOCAL.generator.thread_yield(value=value)
-
-
-class AnyCallable:
-    def __call__(self, *args, **kwargs) -> Any:
-        raise NotImplementedError
-
-
 @dataclass
 class ThreadGenerator:
-    fun: AnyCallable
+    fun: Callable
     is_child: bool = False
     is_entered: bool = False
     queue_in: Optional[multiprocessing.Queue] = None
@@ -184,7 +144,7 @@ class ThreadGenerator:
         if isinstance(packet, Yield):
             return packet.payload
         elif isinstance(packet, Raise):
-            raise packet.exception from None
+            raise packet.exception from packet.exception
         elif isinstance(packet, Exit):
             raise _SuperGeneratorExit
         elif isinstance(packet, Terminate):
@@ -198,7 +158,7 @@ class ThreadGenerator:
 
         self.is_child = True
 
-        thread_store(self)
+        yield_fun_set(lambda label: self.thread_yield(label))
 
         try:
             while True:
@@ -209,7 +169,8 @@ class ThreadGenerator:
                     return
 
                 if not isinstance(packet, Call):
-                    raise _AssertionError
+                    print(packet)
+                    raise _AssertionError("not a call", packet)
 
                 try:
                     rtn = self.fun(*packet.args, **packet.kwargs)
@@ -227,7 +188,7 @@ class ThreadGenerator:
                 except BaseException as exc:
                     self.queue_in.put(Raise(exc))
         except:
-            thread_clean()
+            yield_fun_clean()
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         if self.thread is None:
@@ -256,7 +217,7 @@ class ThreadGenerator:
                     else:
                         self.queue_out.put(Yield(next_yield_payload))
                 elif isinstance(packet, Raise):
-                    raise packet.exception from None
+                    raise packet.exception from packet.exception
                 elif isinstance(packet, Return):
                     return packet.payload
                 else:

@@ -1,0 +1,267 @@
+import enum
+import functools
+from collections import deque
+from typing import NewType, Generator, Callable, Deque
+
+from dataclasses import dataclass, field
+
+ProcessID = NewType("ProcessID", int)
+StateID = NewType("StateID", int)
+
+ProcessGenerator = NewType("ProcessGenerator", Generator[StateID, None, None])
+
+
+class SpecialState(enum.Enum):
+    # Entry = 1
+    Exit = 2
+    # Error = 3
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}.{self.name}"
+
+
+class Stop(BaseException):
+    pass
+
+
+Path = NewType("Path", list[ProcessID])
+
+
+@dataclass
+class Execution:
+    curr_processes: dict[ProcessID, ProcessGenerator]
+    curr_path: Path = field(default_factory=list)
+    curr_states: list[StateID | SpecialState] = field(default_factory=list)
+
+    @property
+    def available_processes(self) -> list[ProcessID]:
+        return list(self.curr_processes.keys())
+
+    @property
+    def curr_state(self) -> "ExecutionState":
+        return ExecutionState.from_path_states(self.curr_path, self.curr_states)
+
+    def next(self, process_id: ProcessID) -> StateID | SpecialState:
+        if process_id not in self.available_processes:
+            raise AssertionError
+
+        next_state_id: int | SpecialState
+        try:
+            next_state_id = next(self.curr_processes[process_id])
+        except StopIteration:
+            # we intentionally do not handle any exceptions here, exiting is exiting.
+            # these should be handled up the call stack
+            del self.curr_processes[process_id]
+            next_state_id = SpecialState.Exit
+
+        self.curr_path.append(process_id)
+        self.curr_states.append(next_state_id)
+
+        return next_state_id
+
+    def stop(self) -> None:
+        for process_id, gen in self.curr_processes.items():
+            try:
+                gen.throw(Stop())
+            except Stop:
+                pass
+        self.curr_processes = {}
+
+
+@dataclass
+class ExecutionState:
+    states: dict[ProcessID, StateID | SpecialState] = field(default_factory=dict)
+
+    def __hash__(self):
+        return functools.reduce(
+            lambda a, b: hash(a) ^ hash(b), sorted(self.states.items()), hash(0)
+        )
+
+    @classmethod
+    def zero(cls):
+        return ExecutionState({})
+
+    @classmethod
+    def from_path_states(
+        cls,
+        curr_path: list[ProcessID | None],
+        curr_states: list[StateID | SpecialState],
+    ) -> "ExecutionState":
+        rtn = ExecutionState()
+
+        for process_id, state_id in zip(curr_path, curr_states):
+            rtn.states[process_id] = state_id
+
+        return rtn
+
+
+ExecutionFactory = NewType("ExecutionFactory", Callable[[], Execution])
+
+
+@dataclass
+class Visitor:
+    factory: ExecutionFactory
+    is_depth_first: bool = False
+
+    visited_edges: dict[
+        tuple[ExecutionState, ProcessID],
+        ExecutionState,
+    ] = field(default_factory=dict)
+    # we define visits as whole paths, but their uniqueness is checked as only the last edge of the path
+    # a single edge is defined as: (process_id_from, state_from), (process_id_to)
+
+    # paths to cover
+    queue: Deque[Path] = field(default_factory=deque)
+
+    paths_found_ctr: int = 0
+    instantiation_ctr: int = 0
+
+    def __post_init__(self):
+        self.next_sub(Path([]))
+
+    @property
+    def visited_vertices(self) -> list[ExecutionState]:
+        return list(
+            set(x for x, _ in self.visited_edges.keys())
+            | set(x for x in self.visited_edges.values())
+        )
+
+    def _can_push_path(self, path: Path) -> bool:
+
+        is_potentially_reachable, _, path_unvisited = self.split_path_visited(path)
+        return is_potentially_reachable and len(path_unvisited)
+
+    def _push_path(self, path: Path) -> None:
+        if self.is_depth_first:
+            self.queue.appendleft(path)
+        else:
+            self.queue.append(path)
+
+    def _attempt_push_path(self, path: Path) -> None:
+        if self._can_push_path(path):
+            self._push_path(path)
+
+    def split_path_visited(self, path: Path) -> tuple[bool, Path, Path]:
+        curr_state = ExecutionState.zero()
+
+        for i, next_process_id in enumerate(path):
+            # if curr_state != ExecutionState.zero() and all(
+            #     v == SpecialState.Exit for v in curr_state.states.values()
+            # ):
+            #     return False, path[:i], path[i:]
+
+            key = curr_state, next_process_id
+
+            if key in self.visited_edges:
+                curr_state = self.visited_edges[key]
+            else:
+                return True, path[:i], path[i:]
+
+        return True, path, Path([])
+
+    def next_sub(self, seed: Path) -> int:
+        def decide_next_path(available_path: Path, preferred_path: Path) -> Path | None:
+            """
+            A pretty complex logic hidden here.
+
+            1. Check that a and b start from the same string. If not return None.
+            2. If a is longer than b, return a
+            3. If b is longer than a, return b
+            :param available_path:
+            :param preferred_path:
+            :return:
+            """
+            prefix_length = min([len(available_path), len(preferred_path)])
+
+            if available_path[:prefix_length] != preferred_path[:prefix_length]:
+                return None
+
+            return Path(
+                available_path[:prefix_length]
+                + (
+                    available_path[prefix_length:]
+                    if len(available_path) > len(preferred_path)
+                    else preferred_path[prefix_length:]
+                )
+            )
+
+        self.instantiation_ctr += 1
+        current_execution: Execution = self.factory()
+
+        paths_found_ctr: int = 0
+
+        while True:
+            available_processes = sorted(
+                [
+                    # using this to make preferred path at the top while the other paths at the bottom
+                    (preferred_path is None, x)
+                    for x in current_execution.available_processes
+                    for path in [Path(current_execution.curr_path + [x])]
+                    for preferred_path in [decide_next_path(seed, path)]
+                    # issue here is that we need to somehow seed this from outside, saying that
+                    # we're interested in deeper paths beyond this one
+                    if self._can_push_path(preferred_path or path)
+                ]
+            )
+
+            if not len(available_processes):
+                break
+
+            paths_found_ctr += len(available_processes)
+
+            (
+                is_not_suffix_path,
+                next_process_id,
+            ), *other_next_process_id__list = available_processes
+
+            for _, x in other_next_process_id__list:
+                self._push_path(Path(current_execution.curr_path + [x]))
+
+            pre_state = current_execution.curr_state
+            current_execution.next(next_process_id)
+            post_state = current_execution.curr_state
+
+            self.visited_edges[(pre_state, next_process_id)] = post_state
+
+        if current_execution.available_processes:
+            current_execution.stop()
+
+        return paths_found_ctr
+
+    def next(self) -> None:
+        while len(self.queue):
+            next_item = self.queue.popleft()
+
+            if not self._can_push_path(next_item):
+                continue
+
+            self.paths_found_ctr += self.next_sub(next_item)
+
+    def spanning_tree(
+        self,
+    ) -> Generator[tuple[Path, list[ExecutionState], list[ProcessID]], None, None]:
+        """
+        This builds a full spanning tree, what if we want just a minimal spanning tree.
+        Vertices are absolute states, therefore an edge can be traversed only once1
+        """
+        queue: Deque[tuple[list[ProcessID], list[ExecutionState]]] = deque()
+        queue.appendleft(([], [ExecutionState.zero()]))
+
+        while len(queue):
+            path, states = queue.popleft()
+
+            next_process_id__list = [
+                next_process_id
+                for state, next_process_id in self.visited_edges.keys()
+                if state == states[-1]
+            ]
+
+            yield path, states, next_process_id__list
+
+            for next_process_id in next_process_id__list:
+                next_state = self.visited_edges[(states[-1], next_process_id)]
+
+                if next_state in states:
+                    continue
+
+                queue.append((path + [next_process_id], states + [next_state]))
