@@ -41,7 +41,7 @@ def graphviz(
                 f"{render_process_id}:{render_process_state_id}"
                 for process_id, process_state_id in sorted(state.states.items())
                 for render_process_state_id in [
-                    ReprStr(process_state_id.name)
+                    ReprStr(process_state_id.name[:1])
                     if isinstance(process_state_id, SpecialState)
                     else process_state_id
                 ]

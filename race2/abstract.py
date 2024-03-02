@@ -13,7 +13,7 @@ ProcessGenerator = NewType("ProcessGenerator", Generator[StateID, None, None])
 
 class SpecialState(enum.Enum):
     Entry = 1
-    Exit = 2
+    Terminated = 2
     # Error = 3
 
     def __repr__(self):
@@ -36,9 +36,16 @@ class Execution:
     identifiable state of some abstract process.
     """
 
-    curr_processes: dict[ProcessID, ProcessGenerator]
+    curr_processes: dict[ProcessID, ProcessGenerator] = field(default_factory=dict)
     curr_path: Path = field(default_factory=list)
-    curr_states: list[StateID | SpecialState] = field(default_factory=list)
+    _curr_state: "ExecutionState" = field(default_factory=lambda: ExecutionState())
+
+    def add_process(self, process_id: ProcessID, fun: ProcessGenerator) -> None:
+        if process_id in self.curr_processes:
+            raise AssertionError
+
+        self.curr_processes[process_id] = fun
+        self._curr_state[process_id] = SpecialState.Entry
 
     @property
     def available_processes(self) -> list[ProcessID]:
@@ -46,7 +53,7 @@ class Execution:
 
     @property
     def curr_state(self) -> "ExecutionState":
-        return ExecutionState.from_path_states(self.curr_path, self.curr_states)
+        return self._curr_state.copy()
 
     def next(self, process_id: ProcessID) -> StateID | SpecialState:
         if process_id not in self.available_processes:
@@ -59,10 +66,11 @@ class Execution:
             # we intentionally do not handle any exceptions here, exiting is exiting.
             # these should be handled up the call stack
             del self.curr_processes[process_id]
-            next_state_id = SpecialState.Exit
+            next_state_id = SpecialState.Terminated
 
         self.curr_path.append(process_id)
-        self.curr_states.append(next_state_id)
+
+        self._curr_state[process_id] = next_state_id
 
         return next_state_id
 
@@ -87,6 +95,14 @@ class ExecutionState:
     @classmethod
     def zero(cls):
         return ExecutionState({})
+
+    def copy(self) -> "ExecutionState":
+        return ExecutionState(dict(self.states))
+
+    def __setitem__(
+        self, key: ProcessID, value: StateID | SpecialState
+    ) -> "ExecutionState":
+        self.states[key] = value
 
     @classmethod
     def from_path_states(
@@ -124,6 +140,8 @@ class Visitor:
     # paths to cover
     queue: Deque[Path] = field(default_factory=deque)
 
+    root_states: set[ExecutionState] = field(default_factory=set)
+
     paths_found_ctr: int = 0
     instantiation_ctr: int = 0
     edge_visit_ctr: int = 0
@@ -153,20 +171,19 @@ class Visitor:
             self._push_path(path)
 
     def split_path_visited(self, path: Path) -> tuple[bool, Path, Path]:
-        curr_state = ExecutionState.zero()
+        for curr_state in self.root_states:
+            for i, next_process_id in enumerate(path):
+                # if curr_state != ExecutionState.zero() and all(
+                #     v == SpecialState.Exit for v in curr_state.states.values()
+                # ):
+                #     return False, path[:i], path[i:]
 
-        for i, next_process_id in enumerate(path):
-            # if curr_state != ExecutionState.zero() and all(
-            #     v == SpecialState.Exit for v in curr_state.states.values()
-            # ):
-            #     return False, path[:i], path[i:]
+                key = curr_state, next_process_id
 
-            key = curr_state, next_process_id
-
-            if key in self.visited_edges:
-                curr_state = self.visited_edges[key]
-            else:
-                return True, path[:i], path[i:]
+                if key in self.visited_edges:
+                    curr_state = self.visited_edges[key]
+                else:
+                    return True, path[:i], path[i:]
 
         return True, path, Path([])
 
@@ -201,6 +218,8 @@ class Visitor:
     def next_sub(self, seed: Path) -> int:
         self.instantiation_ctr += 1
         current_execution: Execution = self.factory()
+
+        self.root_states.add(current_execution.curr_state)
 
         paths_found_ctr: int = 0
 

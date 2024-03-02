@@ -1,28 +1,11 @@
-from dataclasses import dataclass, field
-
 from race2.abstract import (
     ProcessGenerator,
     Execution,
     ProcessID,
     Visitor,
-    SpecialState,
-    Path,
 )
 from race2.util.graphviz import graphviz
-
-
-@dataclass
-class DB:
-    items: dict[str, int] = field(default_factory=dict)
-
-    def compare_and_swap(
-        self, value_key: str, expected_value: int | None, set_value: int | None
-    ) -> bool:
-        if self.items.get(value_key) == expected_value:
-            self.items[value_key] = set_value
-            return True
-        else:
-            return False
+from race2_examples.util import DB
 
 
 def main():
@@ -38,9 +21,10 @@ def main():
 
     def factory() -> Execution:
         database: DB = DB()
-        return Execution(
-            {ProcessID(i): thread(database, i) for i in range(2)},
-        )
+        exec = Execution()
+        for i in range(2):
+            exec.add_process(ProcessID(i), thread(database, i))
+        return exec
 
     vis = Visitor(factory)
     vis.next()
