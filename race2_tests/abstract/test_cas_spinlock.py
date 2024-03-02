@@ -4,7 +4,7 @@ from dataclasses import field, dataclass
 from unittest import TestCase
 
 from race2.abstract import Visitor, Execution, ProcessID, SpecialState, ProcessGenerator
-from race2_tests.abstract.util import graphviz
+from race2.util.graphviz import graphviz
 
 
 @dataclass
