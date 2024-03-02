@@ -50,7 +50,7 @@ class TestCASSpinlock(_TestCASSpinlock):
                         [
                             x
                             for x in states__list[-1].states.values()
-                            if x == SpecialState.Exit
+                            if x == SpecialState.Terminated
                         ]
                     )
                     == 2
@@ -76,7 +76,7 @@ class TestCASSpinlock(_TestCASSpinlock):
                         [
                             x
                             for x in states__list[-1].states.values()
-                            if x == SpecialState.Exit
+                            if x == SpecialState.Terminated
                         ]
                     )
                     == 3
@@ -154,7 +154,7 @@ class TestDeadlock(_TestDeadlock):
                     [
                         None
                         for x in states__list[-1].states.values()
-                        if x == SpecialState.Exit
+                        if x == SpecialState.Terminated
                     ]
                 )
                 >= 1
