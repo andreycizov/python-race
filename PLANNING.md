@@ -1,3 +1,10 @@
+# 2024-03-02
+
+- Integrate with Celery such that `.delay` would create a new process in the current execution and thus for example 
+  if we start with 2 processes running, we'll end up with 3 processes running if a new one started.
+- Run a functional test with iwoca-django codebase
+- Add a graphviz example of what the tool actually doses
+
 # 2023-12-31
 
 - The most important bit:

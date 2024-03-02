@@ -12,7 +12,7 @@ ProcessGenerator = NewType("ProcessGenerator", Generator[StateID, None, None])
 
 
 class SpecialState(enum.Enum):
-    # Entry = 1
+    Entry = 1
     Exit = 2
     # Error = 3
 
@@ -29,6 +29,13 @@ Path = NewType("Path", list[ProcessID])
 
 @dataclass
 class Execution:
+    """
+    Stores the current list and state of the processes. Each process
+    can be `yielded` and gives back it's current unique `StateID`.
+    `StateID` is quite abstract, in essence think of it as a uniquely
+    identifiable state of some abstract process.
+    """
+
     curr_processes: dict[ProcessID, ProcessGenerator]
     curr_path: Path = field(default_factory=list)
     curr_states: list[StateID | SpecialState] = field(default_factory=list)
@@ -100,6 +107,10 @@ ExecutionFactory = NewType("ExecutionFactory", Callable[[], Execution])
 
 @dataclass
 class Visitor:
+    """
+    An ExecutionFactory
+    """
+
     factory: ExecutionFactory
     is_depth_first: bool = False
 
@@ -115,6 +126,7 @@ class Visitor:
 
     paths_found_ctr: int = 0
     instantiation_ctr: int = 0
+    edge_visit_ctr: int = 0
 
     def __post_init__(self):
         self.next_sub(Path([]))
@@ -127,7 +139,6 @@ class Visitor:
         )
 
     def _can_push_path(self, path: Path) -> bool:
-
         is_potentially_reachable, _, path_unvisited = self.split_path_visited(path)
         return is_potentially_reachable and len(path_unvisited)
 
@@ -159,32 +170,35 @@ class Visitor:
 
         return True, path, Path([])
 
-    def next_sub(self, seed: Path) -> int:
-        def decide_next_path(available_path: Path, preferred_path: Path) -> Path | None:
-            """
-            A pretty complex logic hidden here.
+    @classmethod
+    def decide_next_path(
+        cls, available_path: Path, preferred_path: Path
+    ) -> Path | None:
+        """
+        A pretty complex logic hidden here.
 
-            1. Check that a and b start from the same string. If not return None.
-            2. If a is longer than b, return a
-            3. If b is longer than a, return b
-            :param available_path:
-            :param preferred_path:
-            :return:
-            """
-            prefix_length = min([len(available_path), len(preferred_path)])
+        1. Check that a and b start from the same string. If not return None.
+        2. If a is longer than b, return a
+        3. If b is longer than a, return b
+        :param available_path:
+        :param preferred_path:
+        :return:
+        """
+        prefix_length = min([len(available_path), len(preferred_path)])
 
-            if available_path[:prefix_length] != preferred_path[:prefix_length]:
-                return None
+        if available_path[:prefix_length] != preferred_path[:prefix_length]:
+            return None
 
-            return Path(
-                available_path[:prefix_length]
-                + (
-                    available_path[prefix_length:]
-                    if len(available_path) > len(preferred_path)
-                    else preferred_path[prefix_length:]
-                )
+        return Path(
+            available_path[:prefix_length]
+            + (
+                available_path[prefix_length:]
+                if len(available_path) > len(preferred_path)
+                else preferred_path[prefix_length:]
             )
+        )
 
+    def next_sub(self, seed: Path) -> int:
         self.instantiation_ctr += 1
         current_execution: Execution = self.factory()
 
@@ -197,7 +211,7 @@ class Visitor:
                     (preferred_path is None, x)
                     for x in current_execution.available_processes
                     for path in [Path(current_execution.curr_path + [x])]
-                    for preferred_path in [decide_next_path(seed, path)]
+                    for preferred_path in [self.decide_next_path(seed, path)]
                     # issue here is that we need to somehow seed this from outside, saying that
                     # we're interested in deeper paths beyond this one
                     if self._can_push_path(preferred_path or path)
@@ -210,7 +224,7 @@ class Visitor:
             paths_found_ctr += len(available_processes)
 
             (
-                is_not_suffix_path,
+                _,
                 next_process_id,
             ), *other_next_process_id__list = available_processes
 
@@ -219,6 +233,7 @@ class Visitor:
 
             pre_state = current_execution.curr_state
             current_execution.next(next_process_id)
+            self.edge_visit_ctr += 1
             post_state = current_execution.curr_state
 
             self.visited_edges[(pre_state, next_process_id)] = post_state

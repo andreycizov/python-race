@@ -1,7 +1,7 @@
 from unittest import TestCase
 
 from race2.abstract import Visitor, Execution, ProcessID
-from race2_tests.abstract.util import graphviz
+from race2.util.graphviz import graphviz
 
 
 class Test(TestCase):

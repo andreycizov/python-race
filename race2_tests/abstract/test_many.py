@@ -15,7 +15,12 @@ class Test(TestCase):
         vis.next()
 
         self.assertEqual(
-            (10404, 20604, 202, 40602),
-            (len(vis.visited_vertices), len(vis.visited_edges), vis.instantiation_ctr, vis.paths_found_ctr),
+            (10404, 20604, 202, 40602, 30704),
+            (
+                len(vis.visited_vertices),
+                len(vis.visited_edges),
+                vis.instantiation_ctr,
+                vis.paths_found_ctr,
+                vis.edge_visit_ctr,
+            ),
         )
-

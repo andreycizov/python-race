@@ -2,7 +2,7 @@ from race2.abstract import SpecialState
 from race2.multiprocessing.remote import RemoteGenerator
 from race2.multiprocessing.thread import ThreadGenerator
 from race2.multiprocessing.trace import TraceYield
-from race2_tests.abstract.util import graphviz
+from race2.util.graphviz import graphviz
 from race2_tests.multiprocessing.test_combined import (
     CAS,
     TestDeadlock as _TestDeadlock,
