@@ -1,13 +1,10 @@
-race
-====
+# race
 
 Race condition modelling package.
 
-What does it do?
-----------------
+## What does it do?
 
-Deadlock example
-________________
+### Deadlock example
 
 [Here's](./race2_examples/deadlock.py) an example code that you can run yourself.
 
@@ -52,18 +49,16 @@ Paying attention to the bottom of the diagram, we see a total of 2 potential end
 or `(a:2 b:T)`. This means that either `a` or `b` will finish, but never both of them. It means that the deadlock is
 possible.
 
-Retry example
-_____________
+### Retry example
 
-[Here's](./race2_examples/retry.py) another example code that you can run yourself. This process is modelling a process
-where a process tries to acquire a lock and then release it. If a process fails to acquire a lock it retries with
-a maximum of 3 attempts. The diagram below demonstrates that under the condition of no new processes starting
+[Here's](./race2_examples/retry.py) another example code that you can run yourself. Here we are modelling a system where a process tries to 
+acquire a lock and then release it. If a process fails to acquire (due to another process having acquired a lock before) 
+a lock it retries with a maximum of 3 attempts. The diagram below demonstrates that under the condition of no new processes starting
 3 retries (retry processes are marked with `rX` where `X` is the number of retry) would never be reached, although 2 retries will be.
 
 <img src="race2_examples/retry.png">
 
-Known idiosyncracies
---------------------
+## Known idiosyncracies
 
 Busy loops should only have 1 label per 1 execution of a loop.
 The same thing goes for all other loops.
