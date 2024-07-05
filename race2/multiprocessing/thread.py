@@ -2,21 +2,22 @@ import inspect
 import logging
 import multiprocessing
 import threading
+from queue import Empty
 from typing import Optional, Any, Dict, Tuple, Callable
 
 from dataclasses import dataclass, replace
 
-from race2.multiprocessing.remote import ReentryError
+from race2.multiprocessing.remote import ReentryError, RemoteTimeoutError
 from race2.multiprocessing.yield_fun import yield_fun_set, yield_fun_clean
 
 _LOG = logging.getLogger(__name__)
 
 
-def _main_thread(thread_gen: 'ThreadGenerator') -> None:
+def _main_thread(thread_gen: "ThreadGenerator") -> None:
     try:
         thread_gen.thread_main()
     except:
-        _LOG.exception('_main_thread')
+        _LOG.exception("_main_thread")
 
 
 class Packet:
@@ -69,6 +70,8 @@ class ThreadGenerator:
     queue_out: Optional[multiprocessing.Queue] = None
     thread: Optional[threading.Thread] = None
 
+    read_timeout: float = 10
+
     def open(self):
         self.thread_init()
 
@@ -78,6 +81,10 @@ class ThreadGenerator:
     def thread_attempt_destruct(self) -> None:
         if self.thread is not None:
             self.thread_destruct()
+
+    def thread_restart(self) -> None:
+        self.close()
+        self.open()
 
     def thread_init(self) -> None:
         if self.thread is not None:
@@ -110,7 +117,9 @@ class ThreadGenerator:
             return
             # raise ValueError("Invalid thread object")
 
-        ret = ctypes.pythonapi.PyThreadState_SetAsyncExc(target_tid, ctypes.py_object(exception))
+        ret = ctypes.pythonapi.PyThreadState_SetAsyncExc(
+            target_tid, ctypes.py_object(exception)
+        )
         # ref: http://docs.python.org/c-api/init.html#PyThreadState_SetAsyncExc
 
         # THIS DOES NOT KILL THEADS WHICH ARE SLEEPING!!!!
@@ -144,7 +153,7 @@ class ThreadGenerator:
         if isinstance(packet, Yield):
             return packet.payload
         elif isinstance(packet, Raise):
-            raise packet.exception from packet.exception
+            raise packet.exception
         elif isinstance(packet, Exit):
             raise _SuperGeneratorExit
         elif isinstance(packet, Terminate):
@@ -165,18 +174,16 @@ class ThreadGenerator:
                 packet = self.queue_out.get()
 
                 if isinstance(packet, Terminate):
-
                     return
 
                 if not isinstance(packet, Call):
-                    print(packet)
                     raise _AssertionError("not a call", packet)
 
                 try:
                     rtn = self.fun(*packet.args, **packet.kwargs)
 
                     if inspect.isgenerator(rtn):
-                        raise ValueError('the value returned can not be a generator')
+                        raise ValueError("the value returned can not be a generator")
 
                     self.queue_in.put(Return(rtn))
                 except Terminate:
@@ -191,6 +198,7 @@ class ThreadGenerator:
             yield_fun_clean()
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        self.thread_restart()
         if self.thread is None:
             raise AssertionError
         if self.is_entered:
@@ -201,7 +209,12 @@ class ThreadGenerator:
 
         try:
             while True:
-                packet = self.queue_in.get()
+                try:
+                    packet = self.queue_in.get(timeout=self.read_timeout)
+                except Empty:
+                    self.queue_out.put(Exit())
+                    self.thread_restart()
+                    raise RemoteTimeoutError
 
                 if isinstance(packet, Yield):
                     try:
@@ -211,14 +224,19 @@ class ThreadGenerator:
                         packet = self.queue_in.get()
                         if not isinstance(packet, Exit):
                             raise AssertionError(repr(packet))
+                        self.thread_restart()
                         raise GeneratorExit
                     except BaseException as exc:
                         self.queue_out.put(Raise(exc))
+                        self.thread_restart()
+                        raise
                     else:
                         self.queue_out.put(Yield(next_yield_payload))
                 elif isinstance(packet, Raise):
+                    self.thread_restart()
                     raise packet.exception from packet.exception
                 elif isinstance(packet, Return):
+                    self.thread_restart()
                     return packet.payload
                 else:
                     raise NotImplementedError(repr(packet))

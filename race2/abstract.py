@@ -1,7 +1,7 @@
 import enum
 import functools
 from collections import deque
-from typing import NewType, Generator, Callable, Deque
+from typing import NewType, Generator, Callable, Deque, Any
 
 from dataclasses import dataclass, field
 
@@ -14,7 +14,7 @@ ProcessGenerator = NewType("ProcessGenerator", Generator[StateID, None, None])
 class SpecialState(enum.Enum):
     Entry = 1
     Terminated = 2
-    # Error = 3
+    Xception = 3
 
     def __repr__(self):
         return f"{self.__class__.__name__}.{self.name}"
@@ -40,12 +40,31 @@ class Execution:
     curr_path: Path = field(default_factory=list)
     _curr_state: "ExecutionState" = field(default_factory=lambda: ExecutionState())
 
+    rtn: dict[ProcessID, Any] = field(default_factory=dict)
+
+    handle_terminate: Callable[[], None] = lambda x: None
+
     def add_process(self, process_id: ProcessID, fun: ProcessGenerator) -> None:
         if process_id in self.curr_processes:
-            raise AssertionError
+            raise AssertionError("already exists", process_id)
 
         self.curr_processes[process_id] = fun
         self._curr_state[process_id] = SpecialState.Entry
+
+    # we may be able to rename
+
+    def rename_process(self, process_id: ProcessID, new_process_id: ProcessID) -> None:
+        """
+        To simulate processes with retries, where the process calls itself multiple times
+        When it fails to do something, at the point of the termination of a given process
+        we may want to rename the new process to the old one. This way we collapse the
+        state tree to a lower set of states. We need to ensure that the new process is indeed
+        just like an old one.
+        """
+        if new_process_id in self.curr_processes:
+            raise AssertionError("already exists", new_process_id)
+
+        self.curr_processes[new_process_id] = self.curr_processes.pop(process_id)
 
     @property
     def available_processes(self) -> list[ProcessID]:
@@ -55,22 +74,38 @@ class Execution:
     def curr_state(self) -> "ExecutionState":
         return self._curr_state.copy()
 
+    def from_path(self, path: Path) -> "Execution":
+        for x in path:
+            self.next(x)
+        return self
+
     def next(self, process_id: ProcessID) -> StateID | SpecialState:
         if process_id not in self.available_processes:
-            raise AssertionError
+            raise AssertionError("process id not in available processes")
 
         next_state_id: int | SpecialState
         try:
             next_state_id = next(self.curr_processes[process_id])
-        except StopIteration:
+        except StopIteration as exc:
             # we intentionally do not handle any exceptions here, exiting is exiting.
             # these should be handled up the call stack
             del self.curr_processes[process_id]
             next_state_id = SpecialState.Terminated
 
+            self.rtn[process_id] = exc.value
+        except Exception:
+            del self.curr_processes[process_id]
+            next_state_id = SpecialState.Xception
+            import traceback
+
+            traceback.print_exc()
+
         self.curr_path.append(process_id)
 
         self._curr_state[process_id] = next_state_id
+
+        if not len(self.available_processes):
+            self.handle_terminate()
 
         return next_state_id
 
@@ -80,7 +115,17 @@ class Execution:
                 gen.throw(Stop())
             except Stop:
                 pass
+            else:
+                raise AssertionError
         self.curr_processes = {}
+        self.handle_terminate()
+
+    def run(self, items: list[ProcessID]) -> list[StateID | SpecialState]:
+        rtn: list[StateID | SpecialState] = []
+        for x in items:
+            rtn.append(self.next(x))
+        self.handle_terminate()
+        return rtn
 
 
 @dataclass
@@ -99,23 +144,8 @@ class ExecutionState:
     def copy(self) -> "ExecutionState":
         return ExecutionState(dict(self.states))
 
-    def __setitem__(
-        self, key: ProcessID, value: StateID | SpecialState
-    ) -> "ExecutionState":
+    def __setitem__(self, key: ProcessID, value: StateID | SpecialState) -> None:
         self.states[key] = value
-
-    @classmethod
-    def from_path_states(
-        cls,
-        curr_path: list[ProcessID | None],
-        curr_states: list[StateID | SpecialState],
-    ) -> "ExecutionState":
-        rtn = ExecutionState()
-
-        for process_id, state_id in zip(curr_path, curr_states):
-            rtn.states[process_id] = state_id
-
-        return rtn
 
 
 ExecutionFactory = NewType("ExecutionFactory", Callable[[], Execution])
@@ -140,6 +170,7 @@ class Visitor:
     # paths to cover
     queue: Deque[Path] = field(default_factory=deque)
 
+    # todo maybe change this to a single state, it doesn't seem to make sense to have more than 1 really
     root_states: set[ExecutionState] = field(default_factory=set)
 
     paths_found_ctr: int = 0
@@ -272,14 +303,16 @@ class Visitor:
             self.paths_found_ctr += self.next_sub(next_item)
 
     def spanning_tree(
-        self,
+        self, truly_spanning: bool = False
     ) -> Generator[tuple[Path, list[ExecutionState], list[ProcessID]], None, None]:
         """
         This builds a full spanning tree, what if we want just a minimal spanning tree.
         Vertices are absolute states, therefore an edge can be traversed only once1
         """
         queue: Deque[tuple[list[ProcessID], list[ExecutionState]]] = deque()
-        queue.appendleft(([], [ExecutionState.zero()]))
+        queue.appendleft(([], list(self.root_states)))
+
+        globally_visited_states: set[ExecutionState] = set()
 
         while len(queue):
             path, states = queue.popleft()
@@ -297,5 +330,10 @@ class Visitor:
 
                 if next_state in states:
                     continue
+
+                if truly_spanning:
+                    if next_state in globally_visited_states:
+                        continue
+                    globally_visited_states.add(next_state)
 
                 queue.append((path + [next_process_id], states + [next_state]))

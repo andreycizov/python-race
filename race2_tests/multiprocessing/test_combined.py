@@ -2,18 +2,20 @@ from race2.abstract import ProcessGenerator
 from race2.multiprocessing.remote import RemoteGenerator
 from race2.multiprocessing.thread import ThreadGenerator
 from race2.multiprocessing.yield_fun import yield_fun_yield
-from race2_tests.abstract.test_cas_spinlock import CAS, TestDeadlock as _TestDeadlock, TestCASSpinlock as _TestCASSpinlock
+from race2_tests.abstract.test_cas_spinlock import (
+    CAS,
+    TestDeadlock as _TestDeadlock,
+    TestCASSpinlock as _TestCASSpinlock,
+)
 
 
 class TestCASSpinlock(_TestCASSpinlock):
     def setUp(self):
         self.thread_generator__dict = {
-            i: ThreadGenerator(self.thread_sub_fun)
-            for i in range(3)
+            i: ThreadGenerator(self.thread_sub_fun) for i in range(3)
         }
         self.remote_generator__dict = {
-            k: RemoteGenerator(v)
-            for k, v in self.thread_generator__dict.items()
+            k: RemoteGenerator(v) for k, v in self.thread_generator__dict.items()
         }
 
         for x in self.thread_generator__dict.values():
@@ -49,12 +51,10 @@ class TestCASSpinlock(_TestCASSpinlock):
 class TestDeadlock(_TestDeadlock):
     def setUp(self):
         self.thread_generator__dict = {
-            i: ThreadGenerator(self.thread_sub_fun)
-            for i in range(3)
+            i: ThreadGenerator(self.thread_sub_fun) for i in range(3)
         }
-        self.remote_generator__dict = {
-            k: RemoteGenerator(v)
-            for k, v in self.thread_generator__dict.items()
+        self.remote_generator__dict: dict[int, RemoteGenerator] = {
+            k: RemoteGenerator(v) for k, v in self.thread_generator__dict.items()
         }
 
         for x in self.thread_generator__dict.values():
@@ -72,7 +72,7 @@ class TestDeadlock(_TestDeadlock):
         yield_fun_yield(3)
 
     def thread_fun(self, locks: CAS, lock_id: int) -> int:
-        return self.thread_generator__dict[lock_id](locks, lock_id)
+        return self.remote_generator__dict[lock_id].client()(locks, lock_id)
 
     def tearDown(self):
         for x in self.thread_generator__dict.values():
@@ -80,4 +80,3 @@ class TestDeadlock(_TestDeadlock):
 
         for x in self.remote_generator__dict.values():
             x.close()
-
