@@ -58,6 +58,16 @@ a lock it retries with a maximum of 3 attempts. The diagram below demonstrates t
 
 <img src="race2_examples/retry.png">
 
+### Self Retry example
+
+[Here's](./race2_examples/self_retry.py) another example code that you can run yourself. Here we are modelling a system where
+we are attempting to acquire a lock, and if we fail, we restart the task. The practical challenge here is that there could
+be a runaway number of processes if we do not handle it gracefully. The most interesting bit here is to note that every
+time a process transitions into `fail` state it can also go back to `E` (entry) state as if it was an old process.
+
+<img src="race2_examples/self_retry.png">
+
+
 ### Django table locking example
 
 [Here's](./race2_examples/django/lock.py) 

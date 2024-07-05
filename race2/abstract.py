@@ -42,14 +42,24 @@ class Execution:
 
     rtn: dict[ProcessID, Any] = field(default_factory=dict)
 
-    handle_terminate: Callable[[], None] = lambda x: None
+    handle_terminate: Callable[[], None] = lambda: None
+    handle_terminate_process: dict[ProcessID, Callable[[ProcessID], None]] = field(
+        default_factory=dict
+    )
 
-    def add_process(self, process_id: ProcessID, fun: ProcessGenerator) -> None:
+    def add_process(
+        self,
+        process_id: ProcessID,
+        fun: ProcessGenerator,
+        handle_terminate: Callable[[], None] | None = None,
+    ) -> None:
         if process_id in self.curr_processes:
             raise AssertionError("already exists", process_id)
 
         self.curr_processes[process_id] = fun
         self._curr_state[process_id] = SpecialState.Entry
+
+        self.handle_terminate_process[process_id] = handle_terminate or (lambda x: None)
 
     # we may be able to rename
 
@@ -65,6 +75,10 @@ class Execution:
             raise AssertionError("already exists", new_process_id)
 
         self.curr_processes[new_process_id] = self.curr_processes.pop(process_id)
+        self._curr_state[new_process_id] = self._curr_state.states.pop(process_id)
+        self.handle_terminate_process[
+            new_process_id
+        ] = self.handle_terminate_process.pop(process_id)
 
     @property
     def available_processes(self) -> list[ProcessID]:
@@ -84,25 +98,33 @@ class Execution:
             raise AssertionError("process id not in available processes")
 
         next_state_id: int | SpecialState
+        handle_terminate_process: bool = False
+
+        def remove_process() -> None:
+            nonlocal handle_terminate_process
+            del self.curr_processes[process_id]
+            handle_terminate_process = True
+
         try:
             next_state_id = next(self.curr_processes[process_id])
         except StopIteration as exc:
             # we intentionally do not handle any exceptions here, exiting is exiting.
             # these should be handled up the call stack
-            del self.curr_processes[process_id]
             next_state_id = SpecialState.Terminated
 
             self.rtn[process_id] = exc.value
-        except Exception:
-            del self.curr_processes[process_id]
+            remove_process()
+        except Exception as exc:
             next_state_id = SpecialState.Xception
-            import traceback
-
-            traceback.print_exc()
+            self.rtn[process_id] = exc
+            remove_process()
 
         self.curr_path.append(process_id)
 
         self._curr_state[process_id] = next_state_id
+
+        if handle_terminate_process:
+            self.handle_terminate_process[process_id](process_id)
 
         if not len(self.available_processes):
             self.handle_terminate()
@@ -293,8 +315,10 @@ class Visitor:
 
         return paths_found_ctr
 
-    def next(self) -> None:
-        while len(self.queue):
+    def next(self, max_iter_count: int | None = None) -> None:
+        iter_ctr = 0
+        while len(self.queue) and (max_iter_count is None or iter_ctr < max_iter_count):
+            iter_ctr += 1
             next_item = self.queue.popleft()
 
             if not self._can_push_path(next_item):
