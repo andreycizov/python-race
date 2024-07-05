@@ -1,11 +1,12 @@
+import json
 import logging
 import multiprocessing
 from queue import Empty
 from typing import Optional, Any, Iterable, Dict, Tuple, Callable
 
 from dataclasses import dataclass
+from tblib import Traceback
 
-from race.abstract import Label
 from race2.abstract import ProcessGenerator, StateID
 
 _LOG = logging.getLogger(__name__)
@@ -49,7 +50,20 @@ class Next(ParentEvent):
 
 @dataclass
 class Except(ParentEvent):
-    exception: Exception
+    exception: BaseException
+    traceback_json: str
+
+    @classmethod
+    def from_exception(cls, exc: BaseException) -> "Except":
+        return Except(
+            exception=exc,
+            traceback_json=json.dumps(Traceback(exc.__traceback__).to_dict()),
+        )
+
+    def reraise(self) -> None:
+        raise self.exception.with_traceback(
+            Traceback.from_dict(json.loads(self.traceback_json)).as_traceback()
+        )
 
 
 @dataclass
@@ -71,13 +85,11 @@ class _Exit(Exception):
     pass
 
 
-
-
-def _main_subprocess(remote_generator: 'RemoteGenerator'):
+def _main_subprocess(remote_generator: "RemoteGenerator"):
     try:
         remote_generator.run()
     except:
-        _LOG.exception('_main_subprocess raised')
+        _LOG.exception("_main_subprocess raised")
 
 
 @dataclass
@@ -91,8 +103,8 @@ class RemoteGenerator:
 
     iter_obj: Optional[Iterable[StateID]] = None
 
-    join_timeout: float = 10.
-    read_timeout: Optional[float] = 1.
+    join_timeout: float = 10.0
+    read_timeout: Optional[float] = 1.0
 
     def _process_ensure_running(self):
         if self.process is None:
@@ -104,7 +116,7 @@ class RemoteGenerator:
 
     def _process_start(self):
         if self.process is not None:
-            raise AssertionError
+            raise AssertionError("process is None")
 
         self.in_queue = multiprocessing.Queue(maxsize=1)
         self.out_queue = multiprocessing.Queue(maxsize=1)
@@ -112,14 +124,14 @@ class RemoteGenerator:
         self.process = multiprocessing.Process(
             target=_main_subprocess,
             args=(self,),
-            name='race.mp',
+            name="race.mp",
             daemon=True,
         )
         self.process.start()
 
     def _process_terminate(self):
         if self.process is None:
-            raise AssertionError
+            raise AssertionError("process is None")
 
         self.in_queue.put(Terminate())
         self.in_queue = None
@@ -128,7 +140,7 @@ class RemoteGenerator:
         self.process.join(timeout=self.join_timeout)
         self.process = None
 
-    def __enter__(self) -> 'RemoteGenerator':
+    def __enter__(self) -> "RemoteGenerator":
         self.open()
         return self
 
@@ -141,7 +153,7 @@ class RemoteGenerator:
     def close(self):
         self._process_ensure_stopped()
 
-    def client(self) -> 'RemoteGeneratorClient':
+    def client(self) -> "RemoteGeneratorClient":
         return RemoteGeneratorClient(
             instance=self,
         )
@@ -161,14 +173,14 @@ class RemoteGenerator:
 
     def _dispatch_push(self, msg: Push):
         if self.iter_obj is None:
-            raise AssertionError
+            raise AssertionError("self.iter_obj is None")
 
         try:
             next_item = next(self.iter_obj)
         except StopIteration as exc:
             self.out_queue.put(Stop(exc.value))
         except Exception as exc:
-            self.out_queue.put(Except(exc))
+            self.out_queue.put(Except.from_exception(exc))
         else:
             self.out_queue.put(Next(next_item))
 
@@ -176,7 +188,7 @@ class RemoteGenerator:
         try:
             self.iter_obj = self.fun(*msg.args, **msg.kwargs)
         except Exception as exc:
-            self.out_queue.put(Except(exc))
+            self.out_queue.put(Except.from_exception(exc))
         else:
             self.out_queue.put(ResetOk())
 
@@ -192,10 +204,13 @@ class RemoteGenerator:
         except _Exit:
             pass
         except BaseException as exc:
-            _LOG.exception('main_child')
+            _LOG.exception("main_child")
             self.out_queue.put(Except(exc))
         finally:
-            _LOG.info('terminating')
+            _LOG.info("terminating")
+
+    def __call__(self, *args, **kwargs):
+        return self.client().__call__(*args, **kwargs)
 
 
 class ReentryError(Exception):
@@ -217,7 +232,7 @@ class RemoteGeneratorClient:
         elif isinstance(next_item, Next):
             raise _Yield(next_item.label)
         elif isinstance(next_item, Except):
-            raise _Raise(next_item.exception)
+            next_item.reraise()
         else:
             raise AssertionError
 
@@ -238,7 +253,7 @@ class RemoteGeneratorClient:
             raise RemoteTimeoutError
 
         if isinstance(next_item, Except):
-            raise next_item.exception
+            next_item.reraise()
         elif isinstance(next_item, ResetOk):
             self.instance.in_queue.put(Push())
         else:
@@ -247,7 +262,9 @@ class RemoteGeneratorClient:
         try:
             while True:
                 try:
-                    next_item = self.instance.out_queue.get(timeout=self.instance.read_timeout)
+                    next_item = self.instance.out_queue.get(
+                        timeout=self.instance.read_timeout
+                    )
                 except Empty:
                     self.instance._process_ensure_stopped()
                     raise RemoteTimeoutError
@@ -256,11 +273,11 @@ class RemoteGeneratorClient:
                     self._dispatch(next_item)
                 except _Return as rtn:
                     return rtn.value
-                except _Raise as exc:
-                    raise exc.exception from None
                 except _Yield as exc:
                     yield exc.value
                     self.instance.in_queue.put(Push())
         finally:
             # super-important for GeneratorExit
+            self.instance.in_queue.put(Terminate())
+
             self.semaphore -= 1

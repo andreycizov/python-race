@@ -58,6 +58,29 @@ a lock it retries with a maximum of 3 attempts. The diagram below demonstrates t
 
 <img src="race2_examples/retry.png">
 
+### Django table locking example
+
+[Here's](./race2_examples/django/lock.py) 
+
+We're simulating a table locking mechanism using a table defined using Django ORM, please note here we're using `ThreadExecutor`
+part of the engine where we can turn any executable function into a generator via explicit calls to `yield_fun_yield` 
+(ugly name for now).
+```
+def lock(user_id: int):
+    with transaction.atomic():
+        yield_fun_yield("entry")
+        task_lock_obj, created = Lock.objects.get_or_create(user_id=user_id)
+        if created:
+            yield_fun_yield("created")
+        else:
+            yield_fun_yield("no create")
+```
+It exhibits a pretty interesting behaviour where if first thread reaches "created", the other thread can not proceed
+anymore because it needs to wait till other finishes (yielding a deadlock exception). This is supported by the `ThreadExecutor`
+via timeout mechanism.
+
+<img src="race2_examples/django/lock.png">
+
 ## Known idiosyncracies
 
 Busy loops should only have 1 label per 1 execution of a loop.

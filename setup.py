@@ -5,11 +5,11 @@ history = open('HISTORY.md').read()
 reqs = [x.strip() for x in open('requirements.txt').readlines()]
 
 setup(
-    name='race',
+    name='race2',
     version='0.0.1',
     author='Andrey Cizov',
     author_email='acizov@gmail.com',
-    packages=find_packages(include=('race', 'race.*',)),
+    packages=find_packages(include=('race2', 'race2.*', 'race2.*.*', 'race2.*.*.*')),
     description='Race condition modelling package',
     keywords='',
     url='https://github.com/andreycizov/python-race',

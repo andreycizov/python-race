@@ -1,9 +1,15 @@
+# 2024-07-05
+
+- Managed to do a test run with Django using `ThreadExecutor`
+- Added remote traceback passing from remote executors
+- Added a process rename method that I am yet to play with for self-retrying functions.
+
 # 2024-03-02
 
 - Integrate with Celery such that `.delay` would create a new process in the current execution and thus for example 
   if we start with 2 processes running, we'll end up with 3 processes running if a new one started.
 - Run a functional test with iwoca-django codebase
-- Add a graphviz example of what the tool actually doses
+- Add a graphviz example of what the tool actually does
 
 # 2023-12-31
 

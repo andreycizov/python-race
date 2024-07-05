@@ -79,5 +79,6 @@ def graphviz(
         import time
 
         time.sleep(5)
-
-    os.unlink(filename)
+        os.unlink(filename)
+    else:
+        s.render(view=False, outfile=filename)
