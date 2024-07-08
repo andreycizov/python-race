@@ -19,6 +19,7 @@ def graphviz(
     filename: str = "/home/andrey/Downloads/test.gv",
     should_view: bool = True,
 ):
+    print("buildng graphviz")
     from graphviz import Source
 
     process_id_map = process_id_map or {}
@@ -71,7 +72,13 @@ def graphviz(
     }}
     """
 
+    with open("/home/andrey/Downloads/gv.dot", "w+") as file_obj:
+        file_obj.write(temp)
+
     # print(temp)
+    print("rendering")
+
+    # return
 
     s = Source(temp, filename=filename, format="png")
     if should_view:
