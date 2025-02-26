@@ -70,6 +70,9 @@ class Execution:
         we may want to rename the new process to the old one. This way we collapse the
         state tree to a lower set of states. We need to ensure that the new process is indeed
         just like an old one.
+
+        todo replace this with "tailrec_process" and add an addiional check that replace
+             can only be called from within a process that is about to terminate
         """
         if new_process_id in self.curr_processes:
             raise AssertionError("already exists", new_process_id)
@@ -347,7 +350,8 @@ class Visitor:
                 if state == states[-1]
             ]
 
-            yield path, states, next_process_id__list
+            if not truly_spanning:
+                yield path, states, next_process_id__list
 
             for next_process_id in next_process_id__list:
                 next_state = self.visited_edges[(states[-1], next_process_id)]
@@ -357,6 +361,7 @@ class Visitor:
 
                 if truly_spanning:
                     if next_state in globally_visited_states:
+                        yield path, states, next_process_id__list
                         continue
                     globally_visited_states.add(next_state)
 

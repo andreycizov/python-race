@@ -1,3 +1,17 @@
+# 2025-02-25
+
+- Create a django app setup that can be automatically tested such as [this](https://github.com/mozilla/django-piston/tree/master/tests/test_project/apps/testapp)
+
+# 2024-07-25
+
+- Add a de-cycler, including subgraph features of graphviz (could make it potentially easier to render really complex graphs for graphviz)
+- Add a concept of a "waiter process": a dummy process that is added to the system if another process wants to wait for some time
+  if the control is given to the waiter process, it would die and "activate" the process that was waiting on the timeout,
+  triggering the timeout condition through temporal ordering.
+- Add a "sentinel process", a process that isn't allowed to be advanced via usual means, and does not appear in `.available_processes`, 
+  but is instead advanced every advance of every other process. This allows us to do checks of the global state after every transition,
+  and keep it in the state. 
+
 # 2024-07-05
 
 - Managed to do a test run with Django using `ThreadExecutor`
