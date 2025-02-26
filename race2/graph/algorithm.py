@@ -7,6 +7,10 @@ from race2.graph.abstract import Graph, VT, ET
 
 
 def collect_cycles(graph: Graph[VT, ET]) -> Iterator[list[int]]:
+    for x in tarjan(graph):
+        if len(x) > 1:
+            yield x
+    return
     root_queue = set(graph.v)
 
     adjacency_dict = graph.adjacency_dict()
@@ -141,6 +145,10 @@ def collapse_cycles(graph: Graph[VT, ET]) -> Graph[Cycle[VT, ET] | VT, ET]:
                 # that happens is the other loop already did one loop
                 if recursive_replacement_vertex not in replacements_dict_reverse:
                     continue
+                else:
+                    raise AssertionError(
+                        "cycles should be resolved in such a way that they are unique and maximal"
+                    )
 
                 for x in replacements_dict_reverse[recursive_replacement_vertex]:
                     replacement_vertices.append(x)
@@ -167,5 +175,66 @@ def leaves(graph: Graph[VT, ET]) -> Iterator[int]:
             yield v
 
 
-def remove_self_cycles(graph: Graph[VT, ET]) -> Graph[VT, ET]:
-    return graph.map(e=lambda idx, v1, v2: (idx, v1, v2) if v1 != v2 else None)
+def clean_graph(graph: Graph[VT, ET]) -> Graph[VT, ET]:
+    # remove self cycles
+    rtn = graph.map(e=lambda idx, v1, v2: (idx, v1, v2) if v1 != v2 else None)
+    # remove repeating edges
+
+    edge_ids_keep = set(
+        idx
+        for _, sub_items in itertools.groupby(
+            sorted(rtn.e, key=lambda x: x[1:]), key=lambda x: x[1:]
+        )
+        for (idx, v1, v2), *_ in [sub_items]
+    )
+    rtn = rtn.map(e=lambda idx, v1, v2: (idx, v1, v2) if idx in edge_ids_keep else None)
+
+    return rtn
+
+
+def tarjan(graph: Graph[VT, ET]) -> list[list[int]]:
+    adjacency_dict = graph.adjacency_dict()
+
+    index_ctr: Iterator[int] = itertools.count()
+    stack: list[int] = []
+    index_dict: dict[int, int] = {}
+    lowlink_dict: dict[int, int] = {}
+    on_stack_dict: dict[int, bool] = {}
+
+    rtn: list[list[int]] = []
+
+    # todo rewrite as a continuation
+
+    def strong_connect(v: int) -> None:
+        index_dict[v] = next(index_ctr)
+        lowlink_dict[v] = index_dict[v]
+
+        stack.append(v)
+        on_stack_dict[v] = True
+
+        for _, w in adjacency_dict.get(v, []):
+            if index_dict.get(w) is None:
+                # successor w has not yet been visited; recurse on it
+                strong_connect(w)
+                lowlink_dict[v] = min(lowlink_dict[v], lowlink_dict[w])
+            elif on_stack_dict[w]:
+                # Successor w is in stack S and hence in the current SCC
+                # If w is not on stack, then (v, w) is an edge pointing to an SCC already found and must be ignored
+                lowlink_dict[v] = min(lowlink_dict[v], index_dict[w])
+
+        if lowlink_dict[v] == index_dict[v]:
+            sub_rtn: list[int] = []
+            while True:
+                w = stack.pop()
+                on_stack_dict[w] = False
+
+                sub_rtn.append(w)
+                if w == v:
+                    break
+            rtn.append(sub_rtn)
+
+    for x in graph.v:
+        if index_dict.get(x) is None:
+            strong_connect(x)
+
+    return rtn

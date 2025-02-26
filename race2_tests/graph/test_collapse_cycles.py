@@ -24,7 +24,8 @@ class Test(TestCase):
                                 (2, 1),
                                 (2, 3),
                             ]
-                        )
+                        ),
+                        [1, 2],
                     )
                 },
             ),
@@ -34,27 +35,14 @@ class Test(TestCase):
     def test_b(self):
         self.assertEqual(
             Graph.from_adjacency_list(
-                vertices=[5],
+                vertices=[4],
                 v_labels={
-                    5: Cycle(
-                        Graph.from_adjacency_list(
-                            [
-                                (2, 4, 3),
-                                (3, 3, 4),
-                            ],
-                            v_labels={
-                                4: Cycle(
-                                    Graph.from_adjacency_list(
-                                        [
-                                            (1, 2),
-                                            (2, 1),
-                                            (2, 3),
-                                            (3, 2),
-                                        ]
-                                    )
-                                )
-                            },
-                        )
+                    4: Cycle(
+                        sub_graph=Graph(
+                            v=[1, 2, 3],
+                            e=[(0, 1, 2), (1, 2, 1), (2, 2, 3), (3, 3, 2)],
+                        ),
+                        cycle=[1, 2, 3],
                     )
                 },
             ),
@@ -78,22 +66,13 @@ class Test(TestCase):
 
         self.assertEqual(
             Graph.from_adjacency_list(
-                vertices=[5],
+                vertices=[4],
                 v_labels={
-                    5: Cycle(
+                    4: Cycle(
                         Graph.from_adjacency_list(
-                            [
-                                (3, 4, 3),
-                                (4, 3, 4),
-                            ],
-                            v_labels={
-                                4: Cycle(
-                                    Graph.from_adjacency_list(
-                                        [(0, 1), (1, 2), (2, 0), (1, 3), (3, 2)]
-                                    )
-                                )
-                            },
-                        )
+                            [(0, 1), (1, 2), (2, 0), (1, 3), (3, 2)]
+                        ),
+                        [0, 1, 2, 3],
                     )
                 },
             ),
@@ -147,7 +126,8 @@ class Test(TestCase):
                                 (2, 1),
                                 (3, 1),
                             ]
-                        )
+                        ),
+                        [1, 2],
                     )
                 },
             ),

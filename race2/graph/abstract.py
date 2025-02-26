@@ -109,17 +109,28 @@ class Graph(Generic[VT, ET]):
             e_labels={**self.e_labels, **other.e_labels},
         )
 
-    def graphviz(self) -> str:
+    def graphviz(
+        self,
+        vertex_colour_dict: dict[int, str] | None = None,
+        edge_colour_dict: dict[int, str] | None = None,
+    ) -> str:
+        if vertex_colour_dict is None:
+            vertex_colour_dict = {}
+
+        if edge_colour_dict is None:
+            edge_colour_dict = {}
+
         vertices_str = "\n".join(
-            f'{vertex_idx} [label="{vertex_label}"]'
+            f'{vertex_idx} [label="{vertex_label}" fontcolor="{vertex_colour_dict.get(vertex_idx, "black")}"]'
             for vertex_idx in self.v
             for vertex_label in [self.v_labels.get(vertex_idx, vertex_idx)]
         )
 
         edges_str = "\n".join(
-            f'{v1} -> {v2} [label="{edge_label}"]'
+            f'{v1} -> {v2} [label="{edge_label}" color="{color}" fontcolor="{color}"]'
             for edge_idx, v1, v2 in self.e
             for edge_label in [self.e_labels.get(edge_idx, "")]
+            for color in [edge_colour_dict.get(edge_idx, "black")]
         )
 
         return f"""
@@ -132,10 +143,15 @@ class Graph(Generic[VT, ET]):
         }}
         """
 
-    def graphviz_render(self, filename="temp.gv") -> None:
+    def graphviz_render(
+        self,
+        filename="temp.gv",
+        *args,
+        **kwargs,
+    ) -> None:
         from graphviz import Source
 
-        s = Source(self.graphviz(), filename=filename, format="png")
+        s = Source(self.graphviz(*args, **kwargs), filename=filename, format="png")
         s.view()
         import os
 

@@ -9,8 +9,8 @@ from race2.abstract import (
     ExecutionState,
     SpecialState,
 )
-from race2.graph.algorithm import leaves, remove_self_cycles, collapse_cycles
-from race2.graph.visitor import graph_from_visitor
+from race2.graph.algorithm import leaves, clean_graph, collapse_cycles
+from race2.graph.visitor import graph_from_visitor, graph_render_labels
 from race2_tests.abstract.test_cas_spinlock import CAS
 
 
@@ -56,12 +56,15 @@ class TestDiningPhilosophers(TestCase):
 
         # show that all roads will eventually lead to a deadlock
         graph = graph_from_visitor(vis)
-        graph_cycles_collapes = remove_self_cycles(collapse_cycles(graph))
+        graph_cycles_collapes = clean_graph(collapse_cycles(graph))
 
-        # graph_render_labels(graph).graphviz_render("1.sin.gv")
+        # Graphviz takes forever to render this so I could never make it work. Maybe addition of subgraphs for cycles
+        # would fix it.
         # graph_render_labels(graph_cycles_collapes).graphviz_render("2.sin.gv")
 
-        #  graph_render_labels(collapse_cycles(graph)).graphviz_render("2.sin.gv")
+        graph_render_labels(graph_cycles_collapes).graphviz_render(
+            "/home/andrey/Downloads/dining-inf-2.sin.gv"
+        )
 
         leaves_vertices = list(leaves(graph_cycles_collapes))
         self.assertEqual(1, len(leaves_vertices))
@@ -87,11 +90,13 @@ class TestDiningPhilosophers(TestCase):
             ),
         )
         graph = graph_from_visitor(vis)
-        graph_cycles_collapes = remove_self_cycles(collapse_cycles(graph))
+        graph_cycles_collapes = clean_graph(collapse_cycles(graph))
         # finite version deadlocks only in some cases but not the others
 
         # graph_render_labels(graph).graphviz_render("1.sin.gv")
-        # graph_render_labels(graph_cycles_collapes).graphviz_render("2.sin.gv")
+        graph_render_labels(graph_cycles_collapes).graphviz_render(
+            "/home/andrey/Downloads/dining-sin-2.sin.gv"
+        )
 
         leaves_vertices = list(leaves(graph_cycles_collapes))
 
