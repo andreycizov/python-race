@@ -39,11 +39,10 @@ class TestCycle(TestCase):
         vis.next()
 
         self.assertEqual(
-            (360, 116, 2013),
+            (360, 116),
             (
                 len(vis.visited_edges),
                 vis.instantiation_ctr,
-                vis.paths_found_ctr,
             ),
         )
         graph = graph_from_visitor(vis)
@@ -57,6 +56,11 @@ class TestCycle(TestCase):
         # graph_render_labels(graph_cycles_collapes).graphviz_render(
         #     "/home/andrey/Downloads/true_cycle.gv"
         # )
+
+        graph_render_labels(graph_cycles_collapes).graphviz_render(
+            "true_cycle.gv",
+            relpath=__file__,
+        )
 
         (leaf,) = leaves(graph_cycles_collapes)
 

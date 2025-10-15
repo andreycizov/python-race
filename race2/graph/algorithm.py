@@ -1,56 +1,83 @@
 import dataclasses
 import itertools
-from collections import deque
+from collections import deque, defaultdict
 from typing import Generic, Iterator, Set, Deque
 
 from race2.graph.abstract import Graph, VT, ET
 
 
-def collect_cycles(graph: Graph[VT, ET]) -> Iterator[list[int]]:
-    for x in tarjan(graph):
-        if len(x) > 1:
-            yield x
-    return
-    root_queue = set(graph.v)
+def collect_cycles(graph: Graph[VT, ET]) -> list[list[int]]:
+    adjacency_dict: dict[int, list[int]] = {k: [v for _, v in vs] for k, vs in graph.adjacency_dict().items()}
 
-    adjacency_dict = graph.adjacency_dict()
+    rtn = [
+       # (scc_v, hierholzer(scc_v[0], {k: [y for y in adjacency_dict.get(k, []) if y in scc_v] for k in scc_v}))
+       #  (scc_v, dfs({k: [y for y in adjacency_dict.get(k, []) if y in scc_v] for k in scc_v}))
+        (scc_v, scc_v)
+        for scc_v in tarjan(graph)
+        if len(scc_v) > 1
+    ]
+    # rtn = sorted(rtn, key=lambda x: len(x[1]))
 
-    visited_cycles: Set[tuple[int, int]] = set()
+    # for scc_v, eulerian_v in rtn:
+    #     # assert that we have visited all tarjans and that they are in the path
+    #     assert [x in scc_v for x in eulerian_v]
+    #     assert [x in eulerian_v for x in scc_v]
+    #
+    #     for a, b in itertools.pairwise(eulerian_v):
+    #         if b not in adjacency_dict[a]:
+    #             raise AssertionError(adjacency_dict[a], a, b)
 
-    while len(root_queue):
-        curr_root = root_queue.pop()
+    return [x for _, x in rtn]
+    # rtn = sorted(rtn, key=lambda x: len(x))
+    # return rtn
+    # root_queue = set(graph.v)
+    #
+    # adjacency_dict = graph.adjacency_dict()
+    #
+    # visited_cycles: Set[tuple[int, int]] = set()
+    #
+    # while len(root_queue):
+    #     curr_root = root_queue.pop()
+    #
+    #     queue: Deque[list[int]] = deque()
+    #     queue.append([curr_root])
+    #
+    #     visited: Set[int] = set()
+    #
+    #     while len(queue):
+    #         curr_path = queue.popleft()
+    #
+    #         if curr_path[-1] in root_queue:
+    #             root_queue.remove(curr_path[-1])
+    #
+    #         if curr_path[-1] in curr_path[:-1]:
+    #             index = curr_path[:-1].index(curr_path[-1])
+    #
+    #             cycle = curr_path[index:-1]
+    #             cycle_key = (cycle[0], cycle[-1])
+    #
+    #             if cycle_key not in visited_cycles:
+    #                 visited_cycles.add(cycle_key)
+    #                 yield cycle
+    #             continue
+    #
+    #         if curr_path[-1] in visited:
+    #             continue
+    #
+    #         visited.add(curr_path[-1])
+    #
+    #         for _, neighbour_vertex in adjacency_dict.get(curr_path[-1], []):
+    #             if neighbour_vertex == curr_path[-1]:
+    #                 continue
+    #             queue.append(curr_path + [neighbour_vertex])
 
-        queue: Deque[list[int]] = deque()
-        queue.append([curr_root])
 
-        visited: Set[int] = set()
-
-        while len(queue):
-            curr_path = queue.popleft()
-
-            if curr_path[-1] in root_queue:
-                root_queue.remove(curr_path[-1])
-
-            if curr_path[-1] in curr_path[:-1]:
-                index = curr_path[:-1].index(curr_path[-1])
-
-                cycle = curr_path[index:-1]
-                cycle_key = (cycle[0], cycle[-1])
-
-                if cycle_key not in visited_cycles:
-                    visited_cycles.add(cycle_key)
-                    yield cycle
-                continue
-
-            if curr_path[-1] in visited:
-                continue
-
-            visited.add(curr_path[-1])
-
-            for _, neighbour_vertex in adjacency_dict.get(curr_path[-1], []):
-                if neighbour_vertex == curr_path[-1]:
-                    continue
-                queue.append(curr_path + [neighbour_vertex])
+def collect_cycles_dict(graph: Graph[VT, ET]) -> dict[int, int]:
+    rtn = {}
+    for idx, cycle in enumerate(collect_cycles(graph)):
+        for v in cycle:
+            rtn[v] = idx
+    return rtn
 
 
 @dataclasses.dataclass(slots=True)
@@ -71,7 +98,7 @@ def collapse_cycles(graph: Graph[VT, ET]) -> Graph[Cycle[VT, ET] | VT, ET]:
         adjacency_dict = rtn.adjacency_dict()
         reverse_adjacency_dict = rtn.reverse().adjacency_dict()
 
-        for original_cycle in collect_cycles_rtn:
+        for original_cycle_idx, original_cycle in enumerate(collect_cycles_rtn):
             cycle = list(set(replacements_dict.get(x, x) for x in original_cycle))
 
             vertices_from = list(
@@ -102,7 +129,7 @@ def collapse_cycles(graph: Graph[VT, ET]) -> Graph[Cycle[VT, ET] | VT, ET]:
                     if (v1 in cycle or v2 in cycle)
                     else None,
                 ),
-                cycle=cycle,
+                cycle=original_cycle,
             )
             rtn = rtn.copy()
             cycle_vertex_id = rtn.vertex_next_id()
@@ -124,15 +151,17 @@ def collapse_cycles(graph: Graph[VT, ET]) -> Graph[Cycle[VT, ET] | VT, ET]:
                 e=edge_mapper,
             )
 
+            break
+
             replacement_vertices = []
 
-            for x in original_cycle:
+            for x in set(original_cycle):
                 replacement_vertices.append(x)
 
             # cleanup for recursive replacements
 
             # `cycle` and not `original_cycle` because aliases have already been resolved
-            for recursive_replacement_vertex in cycle:
+            for recursive_replacement_vertex in set(cycle):
                 # may be working on stale data
                 match cycle_sub_graph.sub_graph.v_labels.get(
                     recursive_replacement_vertex
@@ -146,9 +175,9 @@ def collapse_cycles(graph: Graph[VT, ET]) -> Graph[Cycle[VT, ET] | VT, ET]:
                 if recursive_replacement_vertex not in replacements_dict_reverse:
                     continue
                 else:
-                    raise AssertionError(
-                        "cycles should be resolved in such a way that they are unique and maximal"
-                    )
+                    raise AssertionError(original_cycle_idx,
+                                         "cycles should be resolved in such a way that they are unique and maximal"
+                                         )
 
                 for x in replacements_dict_reverse[recursive_replacement_vertex]:
                     replacement_vertices.append(x)
@@ -164,7 +193,6 @@ def collapse_cycles(graph: Graph[VT, ET]) -> Graph[Cycle[VT, ET] | VT, ET]:
             # todo could use the infromation above to fix adjacency dicts
             adjacency_dict = rtn.adjacency_dict()
             reverse_adjacency_dict = rtn.reverse().adjacency_dict()
-
     return rtn
 
 
@@ -238,3 +266,77 @@ def tarjan(graph: Graph[VT, ET]) -> list[list[int]]:
             strong_connect(x)
 
     return rtn
+
+
+def hierholzer(start: int, adjancency_dict: dict[int, list[int]]) -> list[int]:
+    # G: adjacency list (each edge used once)
+    # Example: G = {'A': ['B'], 'B': ['C', 'A'], 'C': ['A']}
+    stack = [start]
+    path = []
+
+    while stack:
+        v = stack[-1]
+        if adjancency_dict.get(v):
+            u = adjancency_dict[v].pop()
+            stack.append(u)
+        else:
+            path.append(stack.pop())
+
+    path.reverse()
+    return path
+
+
+def dfs(adjancency_dict: dict[int, list[int]]) -> list[int]:
+    explored: set[int] = set()
+    queue: Deque[list[int]] = deque([[start] for start in adjancency_dict.keys()])
+
+    while queue:
+        if len(queue) == 10000:
+            raise AssertionError
+
+        curr_path = queue.popleft()
+        print(curr_path)
+
+        explored.add(curr_path[0])
+
+        if len(curr_path) == len(adjancency_dict):
+            return curr_path
+
+        for next_path in adjancency_dict.get(curr_path[-1], []):
+            # if next_path in curr_path:
+            #     continue
+            if (curr_path[-1], next_path) in itertools.pairwise(curr_path):
+                continue
+
+            if next_path in explored:
+                continue
+            queue.appendleft(curr_path + [next_path])
+
+    raise AssertionError
+
+
+def paint(graph: Graph[VT, ET], start: int) -> set[int]:
+    """
+    Walk the graph back from start vertex and collect all vertices that transitively belong to it
+    :param graph:
+    :param start:
+    :return:
+    """
+    rev_adjacency_dict = graph.reverse().adjacency_dict()
+
+    visited: set[int] = set()
+
+    queue: Deque[int] = deque([start])
+
+    while queue:
+        next_v = queue.popleft()
+
+        if next_v in visited:
+            continue
+
+        visited.add(next_v)
+
+        for _, v in rev_adjacency_dict.get(next_v, []):
+            queue.append(v)
+
+    return visited

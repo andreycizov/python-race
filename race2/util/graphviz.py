@@ -14,10 +14,10 @@ class ReprStr:
 
 
 def graphviz(
-    visitor: Visitor,
-    process_id_map: dict[int, str] | None = None,
-    filename: str = "/home/andrey/Downloads/test.gv",
-    should_view: bool = True,
+        visitor: Visitor,
+        process_id_map: dict[int, str] | None = None,
+        filename: str = "/home/andrey/Downloads/test.gv",
+        should_view: bool = True,
 ):
     print("buildng graphviz")
     from graphviz import Source
@@ -28,7 +28,9 @@ def graphviz(
         k: v
         for v, k in enumerate(
             set(
-                y for (v1, _), v2 in visitor.visited_edges.items() for y in [(v1), (v2)]
+                y for (v1, _), v2_dict in visitor.visited_edges.items()
+                for v2 in v2_dict.keys()
+                for y in [(v1), (v2)]
             )
         )
     }
@@ -53,7 +55,8 @@ def graphviz(
     )
 
     edges = [
-        (vertices[v1], vertices[v2], x) for (v1, x), v2 in visitor.visited_edges.items()
+        (vertices[v1], vertices[v2], x) for (v1, x), v2_dict in visitor.visited_edges.items()
+        for v2 in v2_dict.keys()
     ]
 
     edges_str = "\n".join(

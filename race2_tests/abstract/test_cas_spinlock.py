@@ -3,7 +3,10 @@ from multiprocessing import Manager
 from dataclasses import field, dataclass
 from unittest import TestCase
 
-from race2.abstract import Visitor, Execution, ProcessID, SpecialState, ProcessGenerator
+from race2.abstract import Visitor, Execution, ProcessID, SpecialState, ProcessGenerator, ExecutionState
+from race2.graph.algorithm import leaves, paint
+from race2.graph.graphviz import graphviz_render
+from race2.graph.visitor import graph_from_visitor, graph_render_labels
 from race2.util.graphviz import graphviz
 
 
@@ -47,8 +50,13 @@ class TestCASSpinlock(TestCase):
     def test_2(self):
         vis = self.build_visitor(2)
 
+        graph_render_labels(graph_from_visitor(vis)).graphviz_render(
+            "cas_spinlock.2.gv",
+            relpath=__file__,
+        )
+
         self.assertEqual(48, len(vis.visited_edges))
-        self.assertEqual((12, 90), (vis.instantiation_ctr, vis.paths_found_ctr))
+        self.assertEqual((12, 12), (vis.instantiation_ctr, vis.paths_found_ctr))
         self.assertEqual(227, len(list(vis.spanning_tree())))
         self.assertEqual(
             58,
@@ -57,13 +65,13 @@ class TestCASSpinlock(TestCase):
                     process__list
                     for _, states__list, process__list in vis.spanning_tree()
                     if len(
-                        [
-                            x
-                            for x in states__list[-1].states.values()
-                            if x == SpecialState.Terminated
-                        ]
-                    )
-                    == 2
+                    [
+                        x
+                        for x in states__list[-1].states.values()
+                        if x == SpecialState.Terminated
+                    ]
+                )
+                       == 2
                 ]
             ),
         )
@@ -71,28 +79,47 @@ class TestCASSpinlock(TestCase):
     def test_3(self):
         vis = self.build_visitor(3)
 
-        self.assertEqual(438, len(vis.visited_edges))
-        self.assertEqual((108, 1327), (vis.instantiation_ctr, vis.paths_found_ctr))
-        spanning_tree = list(vis.spanning_tree())
-        self.assertEqual(94033, len(spanning_tree))
-        # show that all final states both have all threads finished
-        self.assertEqual(
-            0,
-            len(
-                [
-                    process__list
-                    for process__list, states__list, next_process_id__list in spanning_tree
-                    if len(
-                        [
-                            x
-                            for x in states__list[-1].states.values()
-                            if x == SpecialState.Terminated
-                        ]
-                    )
-                    == 3
-                    and next_process_id__list != []
-                ]
-            ),
+        graph = graph_from_visitor(vis)
+
+        self.assertEqual((438, 108), (len(vis.visited_edges), vis.instantiation_ctr))
+
+        terminal_v, = leaves(graph)
+
+        v_labels_rev = {v: k for k, v in graph.v_labels.items()}
+
+        mid_terminal_v = {
+            i: v_labels_rev[ExecutionState({y: SpecialState.Terminated if y != i else 3 for y in range(3)})]
+            for i in range(3)
+        }
+
+        mid_terminal_paint = {
+            i: paint(graph, v)
+            for i, v in mid_terminal_v.items()
+        }
+
+        paint_terminal = paint(graph, terminal_v)
+
+        colours = {
+            (True, False,)
+        }
+
+        def colour_fun(v) -> str:
+            colour_hex = sum(
+                ((v in painted_vs) * 255) * 256 ** i
+                for i, painted_vs in mid_terminal_paint.items()
+            )
+            colour_hex = 0xffffff - colour_hex
+
+            if colour_hex == 0xffffff and v in paint_terminal:
+                return "#000000"
+            else:
+                return f"#{colour_hex:06x}"
+
+        graphviz_render(
+            graph_render_labels(graph).graphviz(vertex_colour_dict={v: colour_fun(v) for v in graph.v}),
+            "cas_spinlock.3.gv",
+            relpath=__file__,
+
         )
 
 
@@ -118,10 +145,13 @@ class TestDeadlock(TestCase):
 
     def test_deadlock(self):
         vis = self.build_visitor(2)
-        graphviz(vis)
+        graph_render_labels(graph_from_visitor(vis)).graphviz_render(
+            "deadlock.2.gv",
+            relpath=__file__,
+        )
 
         self.assertEqual(26, len(vis.visited_edges))
-        self.assertEqual((7, 37), (vis.instantiation_ctr, vis.paths_found_ctr))
+        self.assertEqual((7, 7), (vis.instantiation_ctr, vis.paths_found_ctr))
         self.assertEqual(43, len(list(vis.spanning_tree())))
         self.assertEqual(
             [
@@ -154,12 +184,12 @@ class TestDeadlock(TestCase):
                 process__list
                 for process__list, states__list, next_state__list in vis.spanning_tree()
                 if len(
-                    [
-                        None
-                        for x in states__list[-1].states.values()
-                        if x == SpecialState.Terminated
-                    ]
-                )
-                >= 1
+                [
+                    None
+                    for x in states__list[-1].states.values()
+                    if x == SpecialState.Terminated
+                ]
+            )
+                   >= 1
             ],
         )

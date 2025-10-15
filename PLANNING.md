@@ -1,3 +1,8 @@
+# 2025-03-18
+
+- Add process "grouping" or "merging" (decide on the name), where we automatically assume that process id X and Y are the same as long as X or Y are already dead (and while they are running they are considered to be alive). It's obvious how we map a single process one-to-one, but how do we go about multiple?
+  - The solution to this can be to allow the user who creates processes to remap process ids after ever process creation/deletion.
+
 # 2025-02-25
 
 - Create a django app setup that can be automatically tested such as [this](https://github.com/mozilla/django-piston/tree/master/tests/test_project/apps/testapp)

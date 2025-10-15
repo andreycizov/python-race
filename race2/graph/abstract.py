@@ -1,5 +1,6 @@
 import dataclasses
 import itertools
+import os
 from typing import Generic, TypeVar, Callable
 
 ET = TypeVar("ET")
@@ -27,11 +28,11 @@ class Graph(Generic[VT, ET]):
 
     @classmethod
     def from_adjacency_list(
-        cls,
-        edges: list[tuple[int, int] | tuple[int, int, int]] = None,
-        vertices: list[int] = None,
-        v_labels: dict[int, VT] = None,
-        e_labels: list[ET] = None,
+            cls,
+            edges: list[tuple[int, int] | tuple[int, int, int]] = None,
+            vertices: list[int] = None,
+            v_labels: dict[int, VT] = None,
+            e_labels: list[ET] = None,
     ) -> "Graph[VT, ET]":
         edges = edges or []
         vertices = vertices or []
@@ -50,7 +51,7 @@ class Graph(Generic[VT, ET]):
             for index, v1, v2 in [e_defn if len(e_defn) == 3 else (i, dv1, dv2)]
         ]
         vertices_list = (
-            list(set(x for _, a, b in edges_list for x in [a, b])) + vertices
+                list(set(x for _, a, b in edges_list for x in [a, b])) + vertices
         )
 
         assert all(k in vertices_list for k in v_labels.keys())
@@ -70,7 +71,7 @@ class Graph(Generic[VT, ET]):
             e_labels=dict(self.e_labels),
         )
 
-    def adjacency_dict(self) -> dict[int, list[int, int]]:
+    def adjacency_dict(self) -> dict[int, list[tuple[int, int]]]:
         return {
             v1: [(e, v2) for e, _, v2 in v2s]
             for v1, v2s in itertools.groupby(
@@ -110,9 +111,11 @@ class Graph(Generic[VT, ET]):
         )
 
     def graphviz(
-        self,
-        vertex_colour_dict: dict[int, str] | None = None,
-        edge_colour_dict: dict[int, str] | None = None,
+            self,
+            vertex_colour_dict: dict[int, str] | None = None,
+            edge_colour_dict: dict[int, str] | None = None,
+            vertex_group_dict: dict[int, int] | None = None,
+            edge_style_dict: dict[int, str] | None = None
     ) -> str:
         if vertex_colour_dict is None:
             vertex_colour_dict = {}
@@ -120,47 +123,70 @@ class Graph(Generic[VT, ET]):
         if edge_colour_dict is None:
             edge_colour_dict = {}
 
-        vertices_str = "\n".join(
-            f'{vertex_idx} [label="{vertex_label}" fontcolor="{vertex_colour_dict.get(vertex_idx, "black")}"]'
-            for vertex_idx in self.v
-            for vertex_label in [self.v_labels.get(vertex_idx, vertex_idx)]
-        )
+        if edge_style_dict is None:
+            edge_style_dict = {}
+
+        vertices_dict = {vertex_idx:
+                             f'{vertex_idx} [label="{vertex_label}" fontcolor="{vertex_colour_dict.get(vertex_idx, "black")}"]'
+                         for vertex_idx in self.v
+                         for vertex_label in [self.v_labels.get(vertex_idx, vertex_idx).replace('"', '\\"')]
+                         }
 
         edges_str = "\n".join(
-            f'{v1} -> {v2} [label="{edge_label}" color="{color}" fontcolor="{color}"]'
+            f'{v1} -> {v2} [label="{edge_label}" color="{color}" fontcolor="{color}" {edge_style_dict.get(edge_idx, "")}]'
             for edge_idx, v1, v2 in self.e
-            for edge_label in [self.e_labels.get(edge_idx, "")]
+            for edge_label in [self.e_labels.get(edge_idx, "").replace('"', '\\"')]
             for color in [edge_colour_dict.get(edge_idx, "black")]
         )
 
-        return f"""
+        vertice_group_str = ""
+
+        if vertex_group_dict is not None:
+            for group_idx, vertex_iter_obj in itertools.groupby(
+                    sorted(self.v, key=lambda x: vertex_group_dict.get(x, -1)),
+                    key=lambda x: vertex_group_dict.get(x, -1)):
+                if group_idx == -1:
+                    list(vertex_iter_obj)
+                    continue
+
+                subgraph_cluster_vertices_str = "\n".join(vertices_dict.pop(x) + ";" for x in vertex_iter_obj)
+                vertice_group_str += f"""
+    subgraph cluster_{group_idx} {{ {subgraph_cluster_vertices_str} }}
+"""
+
+        vertices_str = "\n".join(v for v in vertices_dict.values())
+
+        rtn = f"""
         digraph G{{
         edge [dir=forward]
         node [shape=plaintext]
 
+        {vertice_group_str}
         {vertices_str}
         {edges_str}
         }}
         """
+        print(rtn)
+        # raise AssertionError
+        return rtn
 
     def graphviz_render(
-        self,
-        filename="temp.gv",
-        *args,
-        **kwargs,
+            self,
+            filename="temp.gv",
+            relpath: str = None,
+            engine: str = "dot",
+            format: str = "png",
+            *args,
+            **kwargs,
     ) -> None:
-        from graphviz import Source
-
-        s = Source(self.graphviz(*args, **kwargs), filename=filename, format="png")
-        s.view()
-        import os
-
-        os.unlink(filename)
+        from race2.graph.graphviz import graphviz_render
+        graphviz_render(self.graphviz(*args, **kwargs), relpath=relpath, engine=engine, filename=filename,
+                        format=format)
 
     def map(
-        self,
-        v: Callable[[int], int | None] = None,
-        e: Callable[[int, int, int], tuple[int, int, int] | None] = None,
+            self,
+            v: Callable[[int], int | None] = None,
+            e: Callable[[int, int, int], tuple[int, int, int] | None] = None,
     ) -> "Graph[VT, ET]":
         new_v = [
             new_x for x in self.v for new_x in [v(x) if v else x] if new_x is not None

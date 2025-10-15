@@ -30,9 +30,9 @@ class Test(TestCase):
                     if done == 2:
                         exec.add_process(ProcessID(CHECK_PROCESS_ID), check())
 
-            exec = Execution(handle_terminate=handle_terminate)
-            exec.add_process(ProcessID(0), increase())
-            exec.add_process(ProcessID(1), increase())
+            exec = Execution()
+            exec.add_process(ProcessID(0), increase(), handle_terminate=handle_terminate)
+            exec.add_process(ProcessID(1), increase(), handle_terminate=handle_terminate)
 
             return exec
 
